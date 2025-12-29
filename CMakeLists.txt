@@ -28,7 +28,6 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 add_library(Nuklear INTERFACE)
 target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
 
-add_executable(Cumulus main.c
-        nuklear_impl.c)
+add_executable(Cumulus main.c)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear)

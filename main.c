@@ -1,9 +1,10 @@
 #define SDL_MAIN_USE_CALLBACKS 1
 #define NK_IMPLEMENTATION
 
+#include <nuklear.h>
+#include <stdlib.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-//#include <nuklear.h>
 
 typedef struct AppContext {
     SDL_Window* window;
@@ -55,6 +56,8 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
             SDL_GetError());
         return SDL_APP_FAILURE;
     }
+
+    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_VSYNC);
 
     AppContext* context = SDL_malloc(sizeof(AppContext));
     context->window = window;
