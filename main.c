@@ -40,7 +40,8 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     }
 
     SDL_WindowFlags windowFlags =
-      SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
+      //SDL_WINDOW_HIGH_PIXEL_DENSITY | 
+		SDL_WINDOW_RESIZABLE;
 
     SDL_Window* window = SDL_CreateWindow(
       "Cumulus", 800, 600, windowFlags);
@@ -94,7 +95,13 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     luaL_openlibs(context->L);
 
     // Load Lua Scripts Here
-
+    const char* scriptPath = "script.lua";
+    if (luaL_dofile(context->L, scriptPath) != LUA_OK) {
+        const char* errorMessage = lua_tostring(context->L, -1);
+        SDL_Log("Error loading %s: %s", scriptPath, errorMessage);
+        lua_pop(context->L, 1); // Pop error message from stack
+    }
+	 
     *appState = context;
 
     return SDL_APP_CONTINUE;
@@ -224,10 +231,23 @@ SDL_AppResult SDL_AppEvent(void* appState, SDL_Event* event)
     // For convenience, I'm also quitting when the user presses the
     // escape key. It makes life easier when I'm testing on a Steam
     // Deck.
-    if (event->type == SDL_EVENT_KEY_DOWN &&
-        event->key.key == SDLK_ESCAPE) {
-        return SDL_APP_SUCCESS;
+    if (event->type == SDL_EVENT_KEY_DOWN) {
+        if (event->key.key == SDLK_ESCAPE) {
+            return SDL_APP_SUCCESS;
         }
+        
+        // Press R to reload Lua
+        if (event->key.key == SDLK_R) {
+            AppContext* context = (AppContext*)appState;
+            SDL_Log("Reloading Lua script...");
+            
+            // Re-run the file to update functions
+            if (luaL_dofile(context->L, "script.lua") != LUA_OK) {
+                SDL_Log("Error reloading script.lua: %s", lua_tostring(context->L, -1));
+                lua_pop(context->L, 1); // Pop error message
+            }
+        }
+    }
 
     // Nothing else to do, so just continue on with the next frame
     // or event.
@@ -239,11 +259,10 @@ void SDL_AppQuit(void* appState, SDL_AppResult result)
     AppContext* context = (AppContext*)appState;
 
     nk_sdl3_gpu_shutdown();
-
-    // Just cleaning things up, making sure we're working with
-    // valid pointers as we go.
+	
     if (context != NULL) {
-        // 3. Close Lua state
+
+        // Close Lua state
         if (context->L) {
             lua_close(context->L);
         }
