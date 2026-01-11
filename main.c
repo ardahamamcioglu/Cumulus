@@ -1,5 +1,4 @@
 #define SDL_MAIN_USE_CALLBACKS 1
-#define NK_IMPLEMENTATION
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_STANDARD_IO
 #define NK_INCLUDE_STANDARD_VARARGS
@@ -8,17 +7,24 @@
 #define NK_INCLUDE_FONT_BAKING
 #define NK_INCLUDE_DEFAULT_FONT
 
+#define NK_IMPLEMENTATION
 #include <nuklear.h>
 #undef NK_IMPLEMENTATION
+#include "nuklear_sdl3_gpu.h"
+
 #include <stdlib.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include "nuklear_sdl3_gpu.h"
+
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
 
 typedef struct AppContext {
     SDL_Window* window;
     SDL_GPUDevice* device;
     struct nk_context* ctx;
+    lua_State *L;
 } AppContext;
 
 /* This function runs once at startup. */
@@ -82,6 +88,10 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     context->window = window;
     context->device = device;
     context->ctx = ctx;
+    context->L = luaL_newstate();
+
+    //Load Lua Scripts Here
+
     *appState = context;
 
     return SDL_APP_CONTINUE;
@@ -90,24 +100,33 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
 SDL_AppResult SDL_AppIterate(void* appState)
 {
   AppContext* context = appState;
-  struct nk_context *ctx = context->ctx;
 
-  nk_input_end(ctx);
+  lua_getglobal(context->L, "update");
+    if (lua_isfunction(context->L, -1)) {
+        if (lua_pcall(context->L, 0, 0, 0) != LUA_OK) {
+            SDL_Log("Lua Runtime Error: %s", lua_tostring(context->L, -1));
+        }
+    }
+
+    //NUKLEAR CONTEXT
+    struct nk_context *ctx = context->ctx;
+
+    nk_input_end(ctx);
 
   /* UI */
-  if (nk_begin(ctx, "Demo", nk_rect(50, 50, 230, 250),
-      NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
-      NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
-  {
-      nk_layout_row_static(ctx, 30, 80, 1);
-      if (nk_button_label(ctx, "button"))
-          SDL_Log("Button pressed!");
-      
-      nk_layout_row_dynamic(ctx, 30, 2);
-      if (nk_option_label(ctx, "easy", 1)) {}
-      if (nk_option_label(ctx, "hard", 0)) {}
-  }
-  nk_end(ctx);
+    if (nk_begin(ctx, "Demo", nk_rect(50, 50, 230, 250),
+        NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
+        NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
+    {
+        nk_layout_row_static(ctx, 30, 80, 1);
+        if (nk_button_label(ctx, "button"))
+        SDL_Log("Button pressed!");
+        
+        nk_layout_row_dynamic(ctx, 30, 2);
+        if (nk_option_label(ctx, "easy", 1)) {}
+        if (nk_option_label(ctx, "hard", 0)) {}
+    }
+    nk_end(ctx);
 
   // Generally speaking, this is where you'd track frame times,
   // update your game state, etc. I'll be doing that in later
@@ -115,16 +134,16 @@ SDL_AppResult SDL_AppIterate(void* appState)
 
   // Once you're ready to start drawing, begin by grabbing a
   // command buffer and a reference to the swapchain texture.
-  SDL_GPUCommandBuffer* cmdBuf;
-  cmdBuf = SDL_AcquireGPUCommandBuffer(context->device);
-  if (cmdBuf == NULL) {
+    SDL_GPUCommandBuffer* cmdBuf;
+    cmdBuf = SDL_AcquireGPUCommandBuffer(context->device);
+    if (cmdBuf == NULL) {
     SDL_Log("SDL_AcquireGPUCommandBuffer failed: %s",
         SDL_GetError());
     return SDL_APP_FAILURE;
-  }
+    }
 
-  /* Upload UI buffers */
-  nk_sdl3_gpu_render_upload(cmdBuf);
+    /* Upload UI buffers */
+    nk_sdl3_gpu_render_upload(cmdBuf);
 
   // As I understand it, _this_ is where it's going to wait for
   // Vsync, not in the loop that calls SDL_AppIterate.
