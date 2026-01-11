@@ -75,13 +75,13 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
 
     SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_VSYNC);
 
-    /* Initialize Nuklear */
+    // Initialize Nuklear
     struct nk_context* ctx = nk_sdl3_gpu_init(device, window, SDL_GetGPUSwapchainTextureFormat(device, window));
     nk_input_begin(ctx);
     
     struct nk_font_atlas *atlas;
     nk_sdl3_gpu_font_stash_begin(&atlas);
-    /* Add fonts here if needed */
+    // Add fonts here if needed
     nk_sdl3_gpu_font_stash_end();
 
     AppContext* context = SDL_malloc(sizeof(AppContext));
@@ -89,8 +89,11 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     context->device = device;
     context->ctx = ctx;
     context->L = luaL_newstate();
+    
+    // 1. Open standard libraries (print, math, string, etc.)
+    luaL_openlibs(context->L);
 
-    //Load Lua Scripts Here
+    // Load Lua Scripts Here
 
     *appState = context;
 
@@ -105,7 +108,10 @@ SDL_AppResult SDL_AppIterate(void* appState)
     if (lua_isfunction(context->L, -1)) {
         if (lua_pcall(context->L, 0, 0, 0) != LUA_OK) {
             SDL_Log("Lua Runtime Error: %s", lua_tostring(context->L, -1));
+            lua_pop(context->L, 1); // Pop the error message
         }
+    } else {
+        lua_pop(context->L, 1); // Pop the non-function value (e.g., nil)
     }
 
     //NUKLEAR CONTEXT
@@ -237,6 +243,11 @@ void SDL_AppQuit(void* appState, SDL_AppResult result)
     // Just cleaning things up, making sure we're working with
     // valid pointers as we go.
     if (context != NULL) {
+        // 3. Close Lua state
+        if (context->L) {
+            lua_close(context->L);
+        }
+
         if (context->device != NULL) {
             if (context->window != NULL) {
                 SDL_ReleaseWindowFromGPUDevice(context->device,
