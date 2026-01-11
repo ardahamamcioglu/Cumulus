@@ -95,7 +95,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     luaL_openlibs(context->L);
 
     // Load Lua Scripts Here
-    const char* scriptPath = "script.lua";
+    const char* scriptPath = "app.lua";
     if (luaL_dofile(context->L, scriptPath) != LUA_OK) {
         const char* errorMessage = lua_tostring(context->L, -1);
         SDL_Log("Error loading %s: %s", scriptPath, errorMessage);
@@ -242,8 +242,8 @@ SDL_AppResult SDL_AppEvent(void* appState, SDL_Event* event)
             SDL_Log("Reloading Lua script...");
             
             // Re-run the file to update functions
-            if (luaL_dofile(context->L, "script.lua") != LUA_OK) {
-                SDL_Log("Error reloading script.lua: %s", lua_tostring(context->L, -1));
+            if (luaL_dofile(context->L, "app.lua") != LUA_OK) {
+                SDL_Log("Error reloading app.lua: %s", lua_tostring(context->L, -1));
                 lua_pop(context->L, 1); // Pop error message
             }
         }
