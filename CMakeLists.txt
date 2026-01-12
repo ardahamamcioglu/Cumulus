@@ -28,6 +28,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(lua)
 
+FetchContent_Declare(
+        cgltf
+        GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+        GIT_TAG v1.14
+)
+FetchContent_MakeAvailable(cgltf)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
@@ -36,9 +43,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 add_library(Nuklear INTERFACE)
 target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
 
-#add_subdirectory(${lua_SOURCE_DIR})
-#add_library(Lua INTERFACE)
-#target_include_directories(Lua INTERFACE ${lua_source_SOURCE_DIR})
+add_library(cgltf INTERFACE)
+target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
 
 set(MACOSX_BUNDLE_ICON_FILE icon.icns)
 set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/icon.icns")
@@ -46,4 +52,4 @@ set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION
 
 add_executable(Cumulus MACOSX_BUNDLE main.c ${APP_ICON_MACOS})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua cgltf)
