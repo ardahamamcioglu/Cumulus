@@ -40,6 +40,10 @@ target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
 #add_library(Lua INTERFACE)
 #target_include_directories(Lua INTERFACE ${lua_source_SOURCE_DIR})
 
-add_executable(Cumulus main.c)
+set(MACOSX_BUNDLE_ICON_FILE icon.icns)
+set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/icon.icns")
+set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+
+add_executable(Cumulus MACOSX_BUNDLE main.c ${APP_ICON_MACOS})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua)

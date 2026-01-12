@@ -1,3 +1,5 @@
+![alt text](icon.png)
+
 # Cumulus
 
 A personal learning project for building game engine-like applications.
