@@ -48,42 +48,33 @@ typedef struct NkSDL3GPU_Device {
 
 static NkSDL3GPU_Device sdl3_gpu;
 
-/* MSL Shaders for macOS */
-static const char *nk_sdl3_msl_vert = 
-    "#include <metal_stdlib>\n"
-    "using namespace metal;\n"
-    "struct VertexIn {\n"
-    "    float2 position [[attribute(0)]];\n"
-    "    float2 uv [[attribute(1)]];\n"
-    "    uchar4 color [[attribute(2)]];\n"
-    "};\n"
-    "struct VertexOut {\n"
-    "    float4 position [[position]];\n"
-    "    float2 uv;\n"
-    "    float4 color;\n"
-    "};\n"
-    "struct Uniforms {\n"
-    "    float4x4 projection;\n"
-    "};\n"
-    "vertex VertexOut main0(VertexIn in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]]) {\n"
-    "    VertexOut out;\n"
-    "    out.position = uniforms.projection * float4(in.position, 0.0, 1.0);\n"
-    "    out.uv = in.uv;\n"
-    "    out.color = float4(in.color) / 255.0;\n"
-    "    return out;\n"
-    "}\n";
-
-static const char *nk_sdl3_msl_frag = 
-    "#include <metal_stdlib>\n"
-    "using namespace metal;\n"
-    "struct VertexOut {\n"
-    "    float4 position [[position]];\n"
-    "    float2 uv;\n"
-    "    float4 color;\n"
-    "};\n"
-    "fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> texture [[texture(0)]], sampler samplr [[sampler(0)]]) {\n"
-    "    return in.color * texture.sample(samplr, in.uv);\n"
-    "}\n";
+/* Helper function to load shader source from file */
+static char* nk_sdl3_load_shader_source(const char* filepath) {
+    SDL_IOStream* file = SDL_IOFromFile(filepath, "r");
+    if (!file) {
+        SDL_Log("Failed to open shader file %s: %s", filepath, SDL_GetError());
+        return NULL;
+    }
+    
+    Sint64 file_size = SDL_GetIOSize(file);
+    if (file_size < 0) {
+        SDL_Log("Failed to get size of shader file %s", filepath);
+        SDL_CloseIO(file);
+        return NULL;
+    }
+    
+    char* source = (char*)SDL_malloc(file_size + 1);
+    if (!source) {
+        SDL_CloseIO(file);
+        return NULL;
+    }
+    
+    size_t bytes_read = SDL_ReadIO(file, source, file_size);
+    SDL_CloseIO(file);
+    
+    source[bytes_read] = '\0';
+    return source;
+}
 
 struct nk_draw_vertex {
     float position[2];
@@ -95,31 +86,49 @@ static void nk_sdl3_gpu_device_create(void) {
     SDL_GPUShaderCreateInfo shader_info;
     SDL_zero(shader_info);
     
-    /* Compile Vertex Shader */
+    /* Load and Compile Vertex Shader */
+    char* vert_source = nk_sdl3_load_shader_source("shaders/nuklear.vert.metal");
+    if (!vert_source) {
+        SDL_Log("Failed to load vertex shader source");
+        return;
+    }
+    
     shader_info.stage = SDL_GPU_SHADERSTAGE_VERTEX;
     shader_info.format = SDL_GPU_SHADERFORMAT_MSL;
-    shader_info.code = (const Uint8*)nk_sdl3_msl_vert;
-    shader_info.code_size = SDL_strlen(nk_sdl3_msl_vert);
+    shader_info.code = (const Uint8*)vert_source;
+    shader_info.code_size = SDL_strlen(vert_source);
     shader_info.entrypoint = "main0";
     shader_info.num_uniform_buffers = 2; /* 0: unused, 1: projection */
     
     sdl3_gpu.vertex_shader = SDL_CreateGPUShader(sdl3_gpu.device, &shader_info);
+    SDL_free(vert_source);
+    
     if (!sdl3_gpu.vertex_shader) {
         SDL_Log("Failed to create vertex shader: %s", SDL_GetError());
+        return;
     }
 
-    /* Compile Fragment Shader */
+    /* Load and Compile Fragment Shader */
+    char* frag_source = nk_sdl3_load_shader_source("shaders/nuklear.frag.metal");
+    if (!frag_source) {
+        SDL_Log("Failed to load fragment shader source");
+        return;
+    }
+    
     shader_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
     shader_info.format = SDL_GPU_SHADERFORMAT_MSL;
-    shader_info.code = (const Uint8*)nk_sdl3_msl_frag;
-    shader_info.code_size = SDL_strlen(nk_sdl3_msl_frag);
+    shader_info.code = (const Uint8*)frag_source;
+    shader_info.code_size = SDL_strlen(frag_source);
     shader_info.entrypoint = "main0";
     shader_info.num_samplers = 1;
     shader_info.num_uniform_buffers = 0;
     
     sdl3_gpu.fragment_shader = SDL_CreateGPUShader(sdl3_gpu.device, &shader_info);
+    SDL_free(frag_source);
+    
     if (!sdl3_gpu.fragment_shader) {
         SDL_Log("Failed to create fragment shader: %s", SDL_GetError());
+        return;
     }
 
     /* Create Pipeline */
