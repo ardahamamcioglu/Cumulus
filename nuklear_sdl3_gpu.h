@@ -1,89 +1,48 @@
-#ifndef NK_SDL3_GPU_H
-#define NK_SDL3_GPU_H
-
 #include <stddef.h>
 #include <SDL3/SDL.h>
-#include <nuklear.h>
+#include "nuklear.h"
 
-/* 
- * Nuklear SDL3 GPU Backend
- * 
- * Usage:
- * 1. nk_sdl3_gpu_init(device, window, render_format);
- * 2. nk_sdl3_gpu_font_stash_begin(&atlas);
- *    ... add fonts ...
- *    nk_sdl3_gpu_font_stash_end();
- * 3. In event loop: nk_sdl3_gpu_handle_event(&event);
- * 4. In render loop: nk_sdl3_gpu_render(cmd_buf, &ctx);
- * 5. Cleanup: nk_sdl3_gpu_shutdown();
- */
+struct NkSDL3GPU_Device;
+typedef struct NkSDL3GPU_Device NkSDL3GPU_Device;
 
-typedef struct NkSDL3GPU_Device {
-    SDL_GPUDevice *device;
-    SDL_Window *window;
+struct nk_draw_vertex;
+
+NkSDL3GPU_Device* nk_sdl3_gpu_init(SDL_GPUDevice *device, SDL_Window *window, SDL_GPUTextureFormat render_format);
+void nk_sdl3_gpu_font_stash_begin(NkSDL3GPU_Device *sdl3_gpu, struct nk_font_atlas **atlas);
+void nk_sdl3_gpu_font_stash_end(NkSDL3GPU_Device *sdl3_gpu);
+int nk_sdl3_gpu_handle_event(NkSDL3GPU_Device *sdl3_gpu, SDL_Event *evt);
+void nk_sdl3_gpu_render_upload(NkSDL3GPU_Device *sdl3_gpu, SDL_GPUCopyPass* copy_pass);
+void nk_sdl3_gpu_render_draw(NkSDL3GPU_Device *sdl3_gpu, SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pass);
+void nk_sdl3_gpu_shutdown(NkSDL3GPU_Device *sdl3_gpu);
+
+#ifdef NK_SDL3_GPU_IMPLEMENTATION
+struct NkSDL3GPU_Device {
+    SDL_GPUDevice* device;
+    SDL_Window* window;
     SDL_GPUTextureFormat render_format;
-    
-    SDL_GPUShader *vertex_shader;
-    SDL_GPUShader *fragment_shader;
-    SDL_GPUGraphicsPipeline *pipeline;
-    
-    SDL_GPUTexture *font_texture;
-    SDL_GPUSampler *sampler;
-    
-    SDL_GPUBuffer *vertex_buffer;
-    SDL_GPUBuffer *index_buffer;
+
+    SDL_GPUShader* vertex_shader;
+    SDL_GPUShader* fragment_shader;
+    SDL_GPUGraphicsPipeline* pipeline;
+
+    SDL_GPUTexture* font_texture;
+    SDL_GPUSampler* sampler;
+
+    SDL_GPUBuffer* vertex_buffer;
+    SDL_GPUBuffer* index_buffer;
     Uint32 vertex_buffer_size;
     Uint32 index_buffer_size;
-    
+
     struct nk_context ctx;
     struct nk_font_atlas atlas;
     struct nk_buffer cmds;
     struct nk_draw_null_texture null;
-    
+
     float width;
     float height;
     float display_width;
     float display_height;
-} NkSDL3GPU_Device;
-
-static NkSDL3GPU_Device sdl3_gpu;
-
-/* MSL Shaders for macOS */
-static const char *nk_sdl3_msl_vert = 
-    "#include <metal_stdlib>\n"
-    "using namespace metal;\n"
-    "struct VertexIn {\n"
-    "    float2 position [[attribute(0)]];\n"
-    "    float2 uv [[attribute(1)]];\n"
-    "    uchar4 color [[attribute(2)]];\n"
-    "};\n"
-    "struct VertexOut {\n"
-    "    float4 position [[position]];\n"
-    "    float2 uv;\n"
-    "    float4 color;\n"
-    "};\n"
-    "struct Uniforms {\n"
-    "    float4x4 projection;\n"
-    "};\n"
-    "vertex VertexOut main0(VertexIn in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]]) {\n"
-    "    VertexOut out;\n"
-    "    out.position = uniforms.projection * float4(in.position, 0.0, 1.0);\n"
-    "    out.uv = in.uv;\n"
-    "    out.color = float4(in.color) / 255.0;\n"
-    "    return out;\n"
-    "}\n";
-
-static const char *nk_sdl3_msl_frag = 
-    "#include <metal_stdlib>\n"
-    "using namespace metal;\n"
-    "struct VertexOut {\n"
-    "    float4 position [[position]];\n"
-    "    float2 uv;\n"
-    "    float4 color;\n"
-    "};\n"
-    "fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> texture [[texture(0)]], sampler samplr [[sampler(0)]]) {\n"
-    "    return in.color * texture.sample(samplr, in.uv);\n"
-    "}\n";
+};
 
 struct nk_draw_vertex {
     float position[2];
@@ -91,43 +50,52 @@ struct nk_draw_vertex {
     nk_byte col[4];
 };
 
-static void nk_sdl3_gpu_device_create(void) {
+static Uint8* nk_sdl3_gpu_load_shader(const char *path, size_t *bytes_read) {
+	Uint8* code = (Uint8*) SDL_LoadFile(path, bytes_read);
+	if (code == NULL) {
+		SDL_Log("Failed to load shader from disk! %s", path);
+		return NULL;
+	}
+	return code;
+}
+
+static void nk_sdl3_gpu_device_create(NkSDL3GPU_Device *sdl3_gpu) {
     SDL_GPUShaderCreateInfo shader_info;
     SDL_zero(shader_info);
     
     /* Compile Vertex Shader */
+    Uint8* vertex_shader_code = nk_sdl3_gpu_load_shader("./shader/nk_shader.vert.spv", &shader_info.code_size);
     shader_info.stage = SDL_GPU_SHADERSTAGE_VERTEX;
-    shader_info.format = SDL_GPU_SHADERFORMAT_MSL;
-    shader_info.code = (const Uint8*)nk_sdl3_msl_vert;
-    shader_info.code_size = SDL_strlen(nk_sdl3_msl_vert);
-    shader_info.entrypoint = "main0";
-    shader_info.num_uniform_buffers = 2; /* 0: unused, 1: projection */
+    shader_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    shader_info.code = vertex_shader_code;
+    shader_info.entrypoint = "main";
+    shader_info.num_uniform_buffers = 1;
     
-    sdl3_gpu.vertex_shader = SDL_CreateGPUShader(sdl3_gpu.device, &shader_info);
-    if (!sdl3_gpu.vertex_shader) {
-        SDL_Log("Failed to create vertex shader: %s", SDL_GetError());
+    sdl3_gpu->vertex_shader = SDL_CreateGPUShader(sdl3_gpu->device, &shader_info);
+    if (!sdl3_gpu->vertex_shader) {
+        SDL_Log("Failed to create vertex shader: %s\n", SDL_GetError());
     }
 
     /* Compile Fragment Shader */
+    Uint8* fragment_shader_code = nk_sdl3_gpu_load_shader("./shader/nk_shader.frag.spv", &shader_info.code_size);
     shader_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    shader_info.format = SDL_GPU_SHADERFORMAT_MSL;
-    shader_info.code = (const Uint8*)nk_sdl3_msl_frag;
-    shader_info.code_size = SDL_strlen(nk_sdl3_msl_frag);
-    shader_info.entrypoint = "main0";
+    shader_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    shader_info.code = fragment_shader_code;
+    shader_info.entrypoint = "main";
     shader_info.num_samplers = 1;
     shader_info.num_uniform_buffers = 0;
     
-    sdl3_gpu.fragment_shader = SDL_CreateGPUShader(sdl3_gpu.device, &shader_info);
-    if (!sdl3_gpu.fragment_shader) {
-        SDL_Log("Failed to create fragment shader: %s", SDL_GetError());
+    sdl3_gpu->fragment_shader = SDL_CreateGPUShader(sdl3_gpu->device, &shader_info);
+    if (!sdl3_gpu->fragment_shader) {
+        SDL_Log("Failed to create fragment shader: %s\n", SDL_GetError());
     }
 
     /* Create Pipeline */
     SDL_GPUGraphicsPipelineCreateInfo pipeline_info;
     SDL_zero(pipeline_info);
     
-    pipeline_info.vertex_shader = sdl3_gpu.vertex_shader;
-    pipeline_info.fragment_shader = sdl3_gpu.fragment_shader;
+    pipeline_info.vertex_shader = sdl3_gpu->vertex_shader;
+    pipeline_info.fragment_shader = sdl3_gpu->fragment_shader;
     
     /* Vertex Input State */
     SDL_GPUVertexAttribute attributes[3];
@@ -167,7 +135,7 @@ static void nk_sdl3_gpu_device_create(void) {
     /* Blend State */
     SDL_GPUColorTargetDescription target_desc;
     SDL_zero(target_desc);
-    target_desc.format = sdl3_gpu.render_format;
+    target_desc.format = sdl3_gpu->render_format;
     target_desc.blend_state.enable_blend = true;
     target_desc.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
     target_desc.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
@@ -178,9 +146,10 @@ static void nk_sdl3_gpu_device_create(void) {
     
     pipeline_info.target_info.num_color_targets = 1;
     pipeline_info.target_info.color_target_descriptions = &target_desc;
+    pipeline_info.target_info.has_depth_stencil_target = false;
     
-    sdl3_gpu.pipeline = SDL_CreateGPUGraphicsPipeline(sdl3_gpu.device, &pipeline_info);
-    if (!sdl3_gpu.pipeline) {
+    sdl3_gpu->pipeline = SDL_CreateGPUGraphicsPipeline(sdl3_gpu->device, &pipeline_info);
+    if (!sdl3_gpu->pipeline) {
         SDL_Log("Failed to create pipeline: %s", SDL_GetError());
     }
     
@@ -194,32 +163,31 @@ static void nk_sdl3_gpu_device_create(void) {
     sampler_info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     sampler_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     
-    sdl3_gpu.sampler = SDL_CreateGPUSampler(sdl3_gpu.device, &sampler_info);
+    sdl3_gpu->sampler = SDL_CreateGPUSampler(sdl3_gpu->device, &sampler_info);
 }
 
-NK_API struct nk_context* nk_sdl3_gpu_init(SDL_GPUDevice *device, SDL_Window *window, SDL_GPUTextureFormat render_format) {
-    sdl3_gpu.device = device;
-    sdl3_gpu.window = window;
-    sdl3_gpu.render_format = render_format;
+NkSDL3GPU_Device* nk_sdl3_gpu_init(SDL_GPUDevice *device, SDL_Window *window, SDL_GPUTextureFormat render_format) {
+    NkSDL3GPU_Device* sdl3_gpu = (NkSDL3GPU_Device*) SDL_malloc(sizeof(NkSDL3GPU_Device));
+    sdl3_gpu->device = device;
+    sdl3_gpu->window = window;
+    sdl3_gpu->render_format = render_format;
     
-    nk_init_default(&sdl3_gpu.ctx, 0);
-    nk_buffer_init_default(&sdl3_gpu.cmds);
-    
-    nk_sdl3_gpu_device_create();
-    
-    return &sdl3_gpu.ctx;
+    nk_init_default(&sdl3_gpu->ctx, 0);
+    nk_buffer_init_default(&sdl3_gpu->cmds);
+    nk_sdl3_gpu_device_create(sdl3_gpu);
+    return sdl3_gpu;
 }
 
-NK_API void nk_sdl3_gpu_font_stash_begin(struct nk_font_atlas **atlas) {
-    nk_font_atlas_init_default(&sdl3_gpu.atlas);
-    nk_font_atlas_begin(&sdl3_gpu.atlas);
-    if (atlas) *atlas = &sdl3_gpu.atlas;
+void nk_sdl3_gpu_font_stash_begin(NkSDL3GPU_Device *sdl3_gpu, struct nk_font_atlas **atlas) {
+    nk_font_atlas_init_default(&sdl3_gpu->atlas);
+    nk_font_atlas_begin(&sdl3_gpu->atlas);
+    if (atlas) *atlas = &sdl3_gpu->atlas;
 }
 
-NK_API void nk_sdl3_gpu_font_stash_end(void) {
+void nk_sdl3_gpu_font_stash_end(NkSDL3GPU_Device *sdl3_gpu) {
     const void *image;
     int w, h;
-    image = nk_font_atlas_bake(&sdl3_gpu.atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
+    image = nk_font_atlas_bake(&sdl3_gpu->atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
     
     /* Upload font texture */
     SDL_GPUTextureCreateInfo texture_info;
@@ -232,19 +200,19 @@ NK_API void nk_sdl3_gpu_font_stash_end(void) {
     texture_info.num_levels = 1;
     texture_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
     
-    sdl3_gpu.font_texture = SDL_CreateGPUTexture(sdl3_gpu.device, &texture_info);
+    sdl3_gpu->font_texture = SDL_CreateGPUTexture(sdl3_gpu->device, &texture_info);
     
     SDL_GPUTransferBufferCreateInfo transfer_info;
     SDL_zero(transfer_info);
     transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transfer_info.size = w * h * 4;
     
-    SDL_GPUTransferBuffer *transfer_buffer = SDL_CreateGPUTransferBuffer(sdl3_gpu.device, &transfer_info);
-    Uint8 *map = SDL_MapGPUTransferBuffer(sdl3_gpu.device, transfer_buffer, false);
+    SDL_GPUTransferBuffer *transfer_buffer = SDL_CreateGPUTransferBuffer(sdl3_gpu->device, &transfer_info);
+    Uint8 *map = SDL_MapGPUTransferBuffer(sdl3_gpu->device, transfer_buffer, false);
     SDL_memcpy(map, image, w * h * 4);
-    SDL_UnmapGPUTransferBuffer(sdl3_gpu.device, transfer_buffer);
+    SDL_UnmapGPUTransferBuffer(sdl3_gpu->device, transfer_buffer);
     
-    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(sdl3_gpu.device);
+    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(sdl3_gpu->device);
     SDL_GPUCopyPass *copy_pass = SDL_BeginGPUCopyPass(cmd);
     
     SDL_GPUTextureTransferInfo source;
@@ -256,7 +224,7 @@ NK_API void nk_sdl3_gpu_font_stash_end(void) {
     
     SDL_GPUTextureRegion destination;
     SDL_zero(destination);
-    destination.texture = sdl3_gpu.font_texture;
+    destination.texture = sdl3_gpu->font_texture;
     destination.w = w;
     destination.h = h;
     destination.d = 1;
@@ -264,32 +232,32 @@ NK_API void nk_sdl3_gpu_font_stash_end(void) {
     SDL_UploadToGPUTexture(copy_pass, &source, &destination, false);
     SDL_EndGPUCopyPass(copy_pass);
     SDL_SubmitGPUCommandBuffer(cmd);
-    SDL_ReleaseGPUTransferBuffer(sdl3_gpu.device, transfer_buffer);
+    SDL_ReleaseGPUTransferBuffer(sdl3_gpu->device, transfer_buffer);
     
-    nk_font_atlas_end(&sdl3_gpu.atlas, nk_handle_ptr(sdl3_gpu.font_texture), &sdl3_gpu.null);
-    if (sdl3_gpu.atlas.default_font)
-        nk_style_set_font(&sdl3_gpu.ctx, &sdl3_gpu.atlas.default_font->handle);
+    nk_font_atlas_end(&sdl3_gpu->atlas, nk_handle_ptr(sdl3_gpu->font_texture), &sdl3_gpu->null);
+    if (sdl3_gpu->atlas.default_font)
+        nk_style_set_font(&sdl3_gpu->ctx, &sdl3_gpu->atlas.default_font->handle);
 }
 
-NK_API int nk_sdl3_gpu_handle_event(SDL_Event *evt) {
-    struct nk_context *ctx = &sdl3_gpu.ctx;
+int nk_sdl3_gpu_handle_event(NkSDL3GPU_Device *sdl3_gpu, SDL_Event *evt) {
+    struct nk_context *ctx = &sdl3_gpu->ctx;
     if (evt->type == SDL_EVENT_MOUSE_BUTTON_DOWN || evt->type == SDL_EVENT_MOUSE_BUTTON_UP) {
         int down = evt->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-        const int x = evt->button.x, y = evt->button.y;
+        const float x = evt->button.x, y = evt->button.y;
         if (evt->button.button == SDL_BUTTON_LEFT) {
             if (evt->button.clicks > 1)
-                nk_input_button(ctx, NK_BUTTON_DOUBLE, x, y, down);
-            nk_input_button(ctx, NK_BUTTON_LEFT, x, y, down);
+                nk_input_button(ctx, NK_BUTTON_DOUBLE, (int)x, (int)y, down);
+            nk_input_button(ctx, NK_BUTTON_LEFT, (int)x, (int)y, down);
         } else if (evt->button.button == SDL_BUTTON_MIDDLE)
-            nk_input_button(ctx, NK_BUTTON_MIDDLE, x, y, down);
+            nk_input_button(ctx, NK_BUTTON_MIDDLE, (int)x, (int)y, down);
         else if (evt->button.button == SDL_BUTTON_RIGHT)
-            nk_input_button(ctx, NK_BUTTON_RIGHT, x, y, down);
+            nk_input_button(ctx, NK_BUTTON_RIGHT, (int)x, (int)y, down);
         return 1;
     } else if (evt->type == SDL_EVENT_MOUSE_MOTION) {
         if (ctx->input.mouse.grabbed) {
             int x = (int)ctx->input.mouse.prev.x, y = (int)ctx->input.mouse.prev.y;
-            nk_input_motion(ctx, x + evt->motion.xrel, y + evt->motion.yrel);
-        } else nk_input_motion(ctx, evt->motion.x, evt->motion.y);
+            nk_input_motion(ctx, x + (int)evt->motion.xrel, y + (int)evt->motion.yrel);
+        } else nk_input_motion(ctx, (int)evt->motion.x, (int)evt->motion.y);
         return 1;
     } else if (evt->type == SDL_EVENT_TEXT_INPUT) {
         nk_glyph glyph;
@@ -347,9 +315,8 @@ NK_API int nk_sdl3_gpu_handle_event(SDL_Event *evt) {
     return 0;
 }
 
-/* Revised Render Functions */
-NK_API void nk_sdl3_gpu_render_upload(SDL_GPUCommandBuffer *cmd) {
-    struct nk_context *ctx = &sdl3_gpu.ctx;
+void nk_sdl3_gpu_render_upload(NkSDL3GPU_Device *sdl3_gpu, SDL_GPUCopyPass* copy_pass) {
+    struct nk_context *ctx = &sdl3_gpu->ctx;
     
     /* Convert */
     static const struct nk_draw_vertex_layout_element vertex_layout[] = {
@@ -388,7 +355,7 @@ NK_API void nk_sdl3_gpu_render_upload(SDL_GPUCommandBuffer *cmd) {
     nk_buffer_init_fixed(&vbuf, vertex_data, MAX_VERTEX_MEMORY);
     nk_buffer_init_fixed(&ebuf, element_data, MAX_ELEMENT_MEMORY);
     
-    nk_convert(ctx, &sdl3_gpu.cmds, &vbuf, &ebuf, &config);
+    nk_convert(ctx, &sdl3_gpu->cmds, &vbuf, &ebuf, &config);
     
     Uint32 v_size = (Uint32)vbuf.needed;
     Uint32 e_size = (Uint32)ebuf.needed;
@@ -398,117 +365,130 @@ NK_API void nk_sdl3_gpu_render_upload(SDL_GPUCommandBuffer *cmd) {
     }
     
     /* Resize buffers */
-    if (sdl3_gpu.vertex_buffer_size < v_size) {
-        if (sdl3_gpu.vertex_buffer) SDL_ReleaseGPUBuffer(sdl3_gpu.device, sdl3_gpu.vertex_buffer);
+    if (sdl3_gpu->vertex_buffer_size < v_size) {
+        // THIS LINE WAS CAUSING A CRASH (0xC0000005)
+        if (sdl3_gpu->vertex_buffer) {
+            SDL_Log("\n\nReleasing nuklear gui vertex buffer\n");
+            SDL_ReleaseGPUBuffer(sdl3_gpu->device, sdl3_gpu->vertex_buffer);
+            sdl3_gpu->vertex_buffer = NULL;
+        }
         SDL_GPUBufferCreateInfo buf_info = {0};
         buf_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
         buf_info.size = v_size * 2;
-        sdl3_gpu.vertex_buffer = SDL_CreateGPUBuffer(sdl3_gpu.device, &buf_info);
-        sdl3_gpu.vertex_buffer_size = buf_info.size;
+        sdl3_gpu->vertex_buffer = SDL_CreateGPUBuffer(sdl3_gpu->device, &buf_info);
+        if (sdl3_gpu->vertex_buffer == NULL) {
+            SDL_Log("Couldn't create vertex buffer: %s\n", SDL_GetError());
+            return;
+        }
+        sdl3_gpu->vertex_buffer_size = buf_info.size;
     }
     
-    if (sdl3_gpu.index_buffer_size < e_size) {
-        if (sdl3_gpu.index_buffer) SDL_ReleaseGPUBuffer(sdl3_gpu.device, sdl3_gpu.index_buffer);
+    if (sdl3_gpu->index_buffer_size < e_size) {
+        if (sdl3_gpu->index_buffer) {
+            SDL_ReleaseGPUBuffer(sdl3_gpu->device, sdl3_gpu->index_buffer);
+            sdl3_gpu->index_buffer = NULL;
+        }
         SDL_GPUBufferCreateInfo buf_info = {0};
         buf_info.usage = SDL_GPU_BUFFERUSAGE_INDEX;
         buf_info.size = e_size * 2;
-        sdl3_gpu.index_buffer = SDL_CreateGPUBuffer(sdl3_gpu.device, &buf_info);
-        sdl3_gpu.index_buffer_size = buf_info.size;
+        sdl3_gpu->index_buffer = SDL_CreateGPUBuffer(sdl3_gpu->device, &buf_info);
+        if (sdl3_gpu->index_buffer == NULL) {
+            SDL_Log("Couldn't create index buffer: %s\n", SDL_GetError());
+            return;
+        }
+        sdl3_gpu->index_buffer_size = buf_info.size;
     }
     
     /* Upload */
     SDL_GPUTransferBufferCreateInfo transfer_info = {0};
     transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transfer_info.size = v_size + e_size;
-    SDL_GPUTransferBuffer *tbuf = SDL_CreateGPUTransferBuffer(sdl3_gpu.device, &transfer_info);
+    SDL_GPUTransferBuffer *tbuf = SDL_CreateGPUTransferBuffer(sdl3_gpu->device, &transfer_info);
     
-    Uint8 *map = SDL_MapGPUTransferBuffer(sdl3_gpu.device, tbuf, false);
+    Uint8 *map = SDL_MapGPUTransferBuffer(sdl3_gpu->device, tbuf, false);
     SDL_memcpy(map, vertex_data, v_size);
     SDL_memcpy(map + v_size, element_data, e_size);
-    SDL_UnmapGPUTransferBuffer(sdl3_gpu.device, tbuf);
-    
-    SDL_GPUCopyPass *copy_pass = SDL_BeginGPUCopyPass(cmd);
+    SDL_UnmapGPUTransferBuffer(sdl3_gpu->device, tbuf);
     
     SDL_GPUTransferBufferLocation source = {0};
     source.transfer_buffer = tbuf;
     source.offset = 0;
-    
     SDL_GPUBufferRegion dest = {0};
-    dest.buffer = sdl3_gpu.vertex_buffer;
+    dest.buffer = sdl3_gpu->vertex_buffer;
     dest.offset = 0;
     dest.size = v_size;
-    
     SDL_UploadToGPUBuffer(copy_pass, &source, &dest, false);
-    
     source.offset = v_size;
-    dest.buffer = sdl3_gpu.index_buffer;
+    dest.buffer = sdl3_gpu->index_buffer;
     dest.size = e_size;
-    
     SDL_UploadToGPUBuffer(copy_pass, &source, &dest, false);
-    SDL_EndGPUCopyPass(copy_pass);
-    
-    SDL_ReleaseGPUTransferBuffer(sdl3_gpu.device, tbuf);
+
+    SDL_ReleaseGPUTransferBuffer(sdl3_gpu->device, tbuf);
 }
 
-NK_API void nk_sdl3_gpu_render_draw(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pass) {
-    struct nk_context *ctx = &sdl3_gpu.ctx;
+void nk_sdl3_gpu_render_draw(NkSDL3GPU_Device *sdl3_gpu, SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pass) {
+    struct nk_context *ctx = &sdl3_gpu->ctx;
     
-    /* Check if we have anything to draw */
-    /* We can check if cmds is empty, but we already converted. */
-    /* We should check if vertex buffer is populated? */
-    /* nk_convert was called in upload. */
-    /* But nk_draw_foreach iterates over ctx->draw_command_buffer? */
-    /* nk_convert clears the command buffer? No. */
-    /* nk_clear clears it. */
+    // 1. Get Actual Pixel Dimensions (Crucial for High-DPI)
+    int width, height;
+    int pixel_w, pixel_h;
+    SDL_GetWindowSize(sdl3_gpu->window, &width, &height);
+    SDL_GetWindowSizeInPixels(sdl3_gpu->window, &pixel_w, &pixel_h);
+
+    // Calculate scale factor for High-DPI
+    float scale_x = (float)pixel_w / (float)width;
+    float scale_y = (float)pixel_h / (float)height;
+
+    /* Bind Pipeline and Shared State */
+    SDL_BindGPUGraphicsPipeline(pass, sdl3_gpu->pipeline);
     
-    /* Bind Pipeline */
-    SDL_BindGPUGraphicsPipeline(pass, sdl3_gpu.pipeline);
-    
-    SDL_GPUBufferBinding v_binding = {0};
-    v_binding.buffer = sdl3_gpu.vertex_buffer;
-    v_binding.offset = 0;
+    SDL_GPUBufferBinding v_binding = { .buffer = sdl3_gpu->vertex_buffer, .offset = 0 };
     SDL_BindGPUVertexBuffers(pass, 0, &v_binding, 1);
     
-    SDL_GPUBufferBinding i_binding = {0};
-    i_binding.buffer = sdl3_gpu.index_buffer;
-    i_binding.offset = 0;
+    SDL_GPUBufferBinding i_binding = { .buffer = sdl3_gpu->index_buffer, .offset = 0 };
     SDL_BindGPUIndexBuffer(pass, &i_binding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
-    
-    /* Viewport */
-    int w, h;
-    SDL_GetWindowSize(sdl3_gpu.window, &w, &h);
-    SDL_GPUViewport viewport = {0, 0, (float)w, (float)h, 0, 1};
+
+    /* Viewport matches the full pixel buffer */
+    SDL_GPUViewport viewport = {0, 0, (float)pixel_w, (float)pixel_h, 0, 1};
     SDL_SetGPUViewport(pass, &viewport);
     
-    /* Projection Matrix */
+    /* Projection Matrix: Map 0..width to -1..1 */
+    float L = 0.0f, R = (float)width, T = 0.0f, B = (float)height;
     float projection[4][4] = {
-        {2.0f/w, 0.0f, 0.0f, 0.0f},
-        {0.0f, -2.0f/h, 0.0f, 0.0f},
-        {0.0f, 0.0f, -1.0f, 0.0f},
-        {-1.0f, 1.0f, 0.0f, 1.0f}
+        {2.0f/(R-L),    0.0f,          0.0f, 0.0f},
+        {0.0f,          2.0f/(T-B),    0.0f, 0.0f},
+        {0.0f,          0.0f,          0.5f, 0.0f},
+        {(R+L)/(L-R),  (T+B)/(B-T),    0.5f, 1.0f}
     };
-    SDL_PushGPUVertexUniformData(cmd, 1, projection, sizeof(projection));
+    SDL_PushGPUVertexUniformData(cmd, 0, projection, sizeof(projection));
     
     /* Draw commands */
     const struct nk_draw_command *cmd_draw;
     Uint32 offset = 0;
     
-    nk_draw_foreach(cmd_draw, ctx, &sdl3_gpu.cmds) {
+    nk_draw_foreach(cmd_draw, ctx, &sdl3_gpu->cmds) {
         if (!cmd_draw->elem_count) continue;
         
+        /* Apply High-DPI Scaling to Scissor */
         SDL_Rect scissor;
-        scissor.x = (int)cmd_draw->clip_rect.x;
-        scissor.y = (int)cmd_draw->clip_rect.y;
-        scissor.w = (int)cmd_draw->clip_rect.w;
-        scissor.h = (int)cmd_draw->clip_rect.h;
+        scissor.x = (int)(cmd_draw->clip_rect.x * scale_x);
+        scissor.y = (int)(cmd_draw->clip_rect.y * scale_y);
+        scissor.w = (int)(cmd_draw->clip_rect.w * scale_x);
+        scissor.h = (int)(cmd_draw->clip_rect.h * scale_y);
+
+        // Optional: Clamp scissor to window bounds to prevent GPU driver crashes
+        scissor.x = SDL_max(0, scissor.x);
+        scissor.y = SDL_max(0, scissor.y);
+        
         SDL_SetGPUScissor(pass, &scissor);
         
         SDL_GPUTexture *tex = (SDL_GPUTexture*)cmd_draw->texture.ptr;
-        if (!tex) tex = sdl3_gpu.font_texture;
+        if (!tex) tex = sdl3_gpu->font_texture;
         
-        SDL_GPUTextureSamplerBinding sampler_binding;
-        sampler_binding.texture = tex;
-        sampler_binding.sampler = sdl3_gpu.sampler;
+        SDL_GPUTextureSamplerBinding sampler_binding = {
+            .texture = tex,
+            .sampler = sdl3_gpu->sampler
+        };
         SDL_BindGPUFragmentSamplers(pass, 0, &sampler_binding, 1);
         
         SDL_DrawGPUIndexedPrimitives(pass, cmd_draw->elem_count, 1, offset, 0, 0);
@@ -518,17 +498,23 @@ NK_API void nk_sdl3_gpu_render_draw(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass
     nk_clear(ctx);
 }
 
-NK_API void nk_sdl3_gpu_shutdown(void) {
-    nk_free(&sdl3_gpu.ctx);
-    nk_buffer_free(&sdl3_gpu.cmds);
+void nk_sdl3_gpu_shutdown(NkSDL3GPU_Device *sdl3_gpu) {
+    if (sdl3_gpu == NULL) {
+        return;
+    }
+
+    nk_free(&sdl3_gpu->ctx);
+    nk_buffer_free(&sdl3_gpu->cmds);
     
-    if (sdl3_gpu.vertex_buffer) SDL_ReleaseGPUBuffer(sdl3_gpu.device, sdl3_gpu.vertex_buffer);
-    if (sdl3_gpu.index_buffer) SDL_ReleaseGPUBuffer(sdl3_gpu.device, sdl3_gpu.index_buffer);
-    if (sdl3_gpu.font_texture) SDL_ReleaseGPUTexture(sdl3_gpu.device, sdl3_gpu.font_texture);
-    if (sdl3_gpu.sampler) SDL_ReleaseGPUSampler(sdl3_gpu.device, sdl3_gpu.sampler);
-    if (sdl3_gpu.pipeline) SDL_ReleaseGPUGraphicsPipeline(sdl3_gpu.device, sdl3_gpu.pipeline);
-    if (sdl3_gpu.vertex_shader) SDL_ReleaseGPUShader(sdl3_gpu.device, sdl3_gpu.vertex_shader);
-    if (sdl3_gpu.fragment_shader) SDL_ReleaseGPUShader(sdl3_gpu.device, sdl3_gpu.fragment_shader);
+    if (sdl3_gpu->vertex_buffer) SDL_ReleaseGPUBuffer(sdl3_gpu->device, sdl3_gpu->vertex_buffer);
+    if (sdl3_gpu->index_buffer) SDL_ReleaseGPUBuffer(sdl3_gpu->device, sdl3_gpu->index_buffer);
+    if (sdl3_gpu->font_texture) SDL_ReleaseGPUTexture(sdl3_gpu->device, sdl3_gpu->font_texture);
+    if (sdl3_gpu->sampler) SDL_ReleaseGPUSampler(sdl3_gpu->device, sdl3_gpu->sampler);
+    if (sdl3_gpu->pipeline) SDL_ReleaseGPUGraphicsPipeline(sdl3_gpu->device, sdl3_gpu->pipeline);
+    if (sdl3_gpu->vertex_shader) SDL_ReleaseGPUShader(sdl3_gpu->device, sdl3_gpu->vertex_shader);
+    if (sdl3_gpu->fragment_shader) SDL_ReleaseGPUShader(sdl3_gpu->device, sdl3_gpu->fragment_shader);
+    SDL_free(sdl3_gpu);
+    sdl3_gpu = NULL;
 }
 
-#endif
+#endif //NK_SDL3_GPU_IMPLEMENTATION
