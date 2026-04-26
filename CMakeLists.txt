@@ -4,21 +4,32 @@ project(Cumulus C)
 include(FetchContent)
 
 set(CMAKE_C_STANDARD 23)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 #Fetch SDL
 FetchContent_Declare(
         sdl
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG release-3.2.28
+        GIT_PRGRESS TRUE
 )
 FetchContent_MakeAvailable(sdl)
 
+# FetchContent_Declare(
+#         nuklear
+#         GIT_REPOSITORY https://github.com/Immediate-Mode-UI/Nuklear.git
+#         GIT_TAG 4.12.8
+#         GIT_PRGRESS TRUE
+# )
+# FetchContent_MakeAvailable(nuklear)
+
 FetchContent_Declare(
-        nuklear
-        GIT_REPOSITORY https://github.com/Immediate-Mode-UI/Nuklear.git
-        GIT_TAG 4.12.8
+    clay
+    GIT_REPOSITORY https://github.com/nicbarker/clay.git
+    GIT_TAG v0.14
+    GIT_PRGRESS TRUE
 )
-FetchContent_MakeAvailable(nuklear)
+FetchContent_MakeAvailable(clay)
 
 FetchContent_Declare(
         lua
@@ -32,6 +43,7 @@ FetchContent_Declare(
         cgltf
         GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
         GIT_TAG v1.14
+        GIT_PRGRESS TRUE
 )
 FetchContent_MakeAvailable(cgltf)
 
@@ -40,8 +52,11 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 #set(CUMULUS_DIR "${CMAKE_SOURCE_DIR}/..")
 
-add_library(Nuklear INTERFACE)
-target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
+# add_library(Nuklear INTERFACE)
+# target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
+
+add_library(Clay INTERFACE)
+target_include_directories(Clay INTERFACE ${clay_SOURCE_DIR})
 
 add_library(cgltf INTERFACE)
 target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
@@ -71,4 +86,5 @@ if(UNIX AND NOT APPLE)
     install(FILES "${CMAKE_SOURCE_DIR}/icon.png" DESTINATION share/icons/hicolor/256x256/apps RENAME cumulus.png OPTIONAL)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua cgltf)
+#target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua cgltf)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 clay lua cgltf)
