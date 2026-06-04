@@ -1,9 +1,11 @@
 #define SDL_MAIN_USE_CALLBACKS 1
+#define CLAY_IMPLEMENTATION
 
 #include <stdlib.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <clay.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -12,9 +14,30 @@ typedef struct AppContext {
     SDL_Window* window;
     SDL_GPUDevice* device;
     lua_State *L;
+    Clay_Arena clayArena;
 } AppContext;
 
-/* This function runs once at startup. */
+static void ClayErrorHandler(Clay_ErrorData errorData) {
+    SDL_Log("Clay error: %.*s",
+        errorData.errorText.length,
+        errorData.errorText.chars);
+}
+
+static Clay_Dimensions ClayMeasureTextStub(
+    Clay_StringSlice text,
+    Clay_TextElementConfig *config,
+    void *userData)
+{
+    (void)text;
+    (void)config;
+    (void)userData;
+
+    // Return zero size — text won't render, but layout won't crash.
+    // Replace with real font measurement later.
+    return (Clay_Dimensions){ 0, 0 };
+}
+
+// Called once at startup to initialize the application.
 SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
 
     SDL_SetAppMetadata("Cumulus", "0.0.1",
@@ -26,9 +49,8 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
-    SDL_WindowFlags windowFlags =
-      //SDL_WINDOW_HIGH_PIXEL_DENSITY |
-		SDL_WINDOW_RESIZABLE;
+    // Create a resizable window (no high-DPI flag for now).
+    SDL_WindowFlags windowFlags = SDL_WINDOW_RESIZABLE;
 
     SDL_Window* window = SDL_CreateWindow(
       "Cumulus", 800, 600, windowFlags);
@@ -39,11 +61,13 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
+    // Request SPIR-V, DXIL, and MSL support for cross-platform shaders.
     SDL_GPUShaderFormat shaderFormats =
       SDL_GPU_SHADERFORMAT_SPIRV |
       SDL_GPU_SHADERFORMAT_DXIL |
       SDL_GPU_SHADERFORMAT_MSL;
 
+    // Create GPU device (debug mode disabled for now).
     SDL_GPUDevice* device = SDL_CreateGPUDevice(shaderFormats,
       false, NULL);
     if (device == NULL) {
@@ -55,28 +79,49 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     SDL_Log("Using %s GPU implementation.",
       SDL_GetGPUDeviceDriver(device));
 
+    // Attach the window to the GPU device for rendering.
     if (!SDL_ClaimWindowForGPUDevice(device, window)) {
         SDL_Log("SDL_ClaimWindowForGPUDevice failed: %s",
             SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
-    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_VSYNC);
+    // Configure swapchain — SDR with VSync enabled.
+    SDL_SetGPUSwapchainParameters(device, window,
+      SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+      SDL_GPU_PRESENTMODE_VSYNC);
 
+    // Allocate Clay's internal memory arena.
+    uint32_t minMem = Clay_MinMemorySize();
+    Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(
+      minMem, SDL_malloc(minMem));
+
+    // Initialize Clay layout system with current window dimensions.
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    Clay_Initialize(arena,
+      (Clay_Dimensions){ (float)w, (float)h },
+      (Clay_ErrorHandler){ .errorHandlerFunction = ClayErrorHandler });
+
+    // Stub text measurement — no fonts yet, just return zeros.
+    Clay_SetMeasureTextFunction(ClayMeasureTextStub, NULL);
+
+    // Allocate and populate the application context.
     AppContext* context = SDL_malloc(sizeof(AppContext));
     context->window = window;
     context->device = device;
     context->L = luaL_newstate();
+    context->clayArena = arena;
 
-    // 1. Open standard libraries (print, math, string, etc.)
+    // Open standard Lua libraries (print, math, string, etc.).
     luaL_openlibs(context->L);
 
-    // Load Lua Scripts Here
+    // Load the Lua app script.
     const char* scriptPath = "app.lua";
     if (luaL_dofile(context->L, scriptPath) != LUA_OK) {
         const char* errorMessage = lua_tostring(context->L, -1);
         SDL_Log("Error loading %s: %s", scriptPath, errorMessage);
-        lua_pop(context->L, 1); // Pop error message from stack
+        lua_pop(context->L, 1);
     }
 
     *appState = context;
@@ -88,32 +133,51 @@ SDL_AppResult SDL_AppIterate(void* appState)
 {
   AppContext* context = appState;
 
+  // --- 1. Feed mouse input into Clay ---
+  float mx, my;
+  Uint32 buttons = SDL_GetMouseState(&mx, &my);
+  Clay_SetPointerState((Clay_Vector2){ mx, my },
+    buttons & SDL_BUTTON_LMASK);
+
+  // --- 2. Begin layout ---
+  Clay_BeginLayout();
+
+  // --- 3. Declare UI elements ---
+  CLAY(CLAY_ID("OuterContainer"),
+      CLAY_LAYOUT_DEFAULT)
+  {
+      CLAY_TEXT(CLAY_STRING("Hello from Clay!"),
+          CLAY_TEXT_CONFIG({
+              .fontSize = 128,
+              .textColor = {255, 255, 255, 255}
+          }));
+  }
+
+  // --- 4. End layout and collect render commands ---
+  Clay_RenderCommandArray renderCommands = Clay_EndLayout();
+
+  // Call Lua update function if one exists.
   lua_getglobal(context->L, "update");
-    if (lua_isfunction(context->L, -1)) {
-        if (lua_pcall(context->L, 0, 0, 0) != LUA_OK) {
-            SDL_Log("Lua Runtime Error: %s", lua_tostring(context->L, -1));
-            lua_pop(context->L, 1); // Pop the error message
-        }
-    } else {
-        lua_pop(context->L, 1); // Pop the non-function value (e.g., nil)
-    }
+  if (lua_isfunction(context->L, -1)) {
+      if (lua_pcall(context->L, 0, 0, 0) != LUA_OK) {
+          SDL_Log("Lua Runtime Error: %s",
+            lua_tostring(context->L, -1));
+          lua_pop(context->L, 1);
+      }
+  } else {
+      lua_pop(context->L, 1);
+  }
 
-  // Generally speaking, this is where you'd track frame times,
-  // update your game state, etc. I'll be doing that in later
-  // posts.
-
-  // Once you're ready to start drawing, begin by grabbing a
-  // command buffer and a reference to the swapchain texture.
-    SDL_GPUCommandBuffer* cmdBuf;
-    cmdBuf = SDL_AcquireGPUCommandBuffer(context->device);
-    if (cmdBuf == NULL) {
+  // Acquire a command buffer from the GPU device.
+  SDL_GPUCommandBuffer* cmdBuf;
+  cmdBuf = SDL_AcquireGPUCommandBuffer(context->device);
+  if (cmdBuf == NULL) {
     SDL_Log("SDL_AcquireGPUCommandBuffer failed: %s",
         SDL_GetError());
     return SDL_APP_FAILURE;
-    }
+  }
 
-  // As I understand it, _this_ is where it's going to wait for
-  // Vsync, not in the loop that calls SDL_AppIterate.
+  // Wait for the next swapchain texture (blocks on VSync).
   SDL_GPUTexture* swapchainTexture;
   if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmdBuf,
           context->window, &swapchainTexture, NULL, NULL)) {
@@ -122,86 +186,71 @@ SDL_AppResult SDL_AppIterate(void* appState)
     return SDL_APP_FAILURE;
   }
 
-  // With the command buffer and swapchain texture in hand, we
-  // can begin and end our render pass
   if (swapchainTexture != NULL) {
-    // There are a lot more options you can set for a render
-    // pass, see SDL_GPUColorTargetInfo in the SDL documentation
-    // for more.
-    // https://wiki.libsdl.org/SDL3/SDL_GPUColorTargetInfo
+    // Configure the color target: clear to green, then present.
+    // See https://wiki.libsdl.org/SDL3/SDL_GPUColorTargetInfo
+    // and https://moonside.games/posts/sdl-gpu-concepts-cycling/
     SDL_GPUColorTargetInfo targetInfo = {
-        // The texture that we're drawing in to
         .texture = swapchainTexture,
-
-        // Whether to cycle that texture. See
-        // https://moonside.games/posts/sdl-gpu-concepts-cycling/
-        // for more info
         .cycle = true,
-
-        // Clear the texture to a known color before drawing
         .load_op = SDL_GPU_LOADOP_CLEAR,
-
-        // Keep the rendered output
         .store_op = SDL_GPU_STOREOP_STORE,
-
-        // And here's the clear color, a nice green.
         .clear_color = {0.16f, 0.47f, 0.34f, 1.0f}};
 
-    // Begin and end the render pass. With no drawing commands,
-    // this will clear the swapchain texture to the color
-    // provided above and nothing else.
     SDL_GPURenderPass* renderPass;
     renderPass = SDL_BeginGPURenderPass(cmdBuf, &targetInfo,
-        1, NULL);
+      1, NULL);
 
-    /* Draw UI */
+    // Draw UI: iterate render commands and issue GPU draws.
+    for (int32_t i = 0; i < renderCommands.length; i++) {
+      Clay_RenderCommand* cmd = Clay_RenderCommandArray_Get(
+        &renderCommands, i);
+      // Switch on cmd->commandType, issue GPU draws.
+    }
 
     SDL_EndGPURenderPass(renderPass);
   }
 
-  // And finally, submit the command buffer for drawing. The
-  // driver will take over at this point and do all the rendering
-  // we've asked it to.
+  // Submit everything to the GPU driver for rendering.
   SDL_SubmitGPUCommandBuffer(cmdBuf);
 
-  // That's it for this frame.
-  //
   return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppEvent(void* appState, SDL_Event* event)
 {
-    // SDL_EVENT_QUIT is sent when the main (last?) application
-    // window closes.
+    // Quit when the main window closes.
     if (event->type == SDL_EVENT_QUIT) {
-        // SDL_APP_SUCCESS means we're making a clean exit.
-        // SDL_APP_FAILURE would mean something went wrong.
         return SDL_APP_SUCCESS;
     }
 
-    // For convenience, I'm also quitting when the user presses the
-    // escape key. It makes life easier when I'm testing on a Steam
-    // Deck.
+    // Quit on Escape (useful for testing on Steam Deck, etc.).
     if (event->type == SDL_EVENT_KEY_DOWN) {
         if (event->key.key == SDLK_ESCAPE) {
             return SDL_APP_SUCCESS;
         }
 
-        // Press R to reload Lua
+        // Press R to reload Lua scripts at runtime.
         if (event->key.key == SDLK_R) {
             AppContext* context = (AppContext*)appState;
             SDL_Log("Reloading Lua script...");
 
-            // Re-run the file to update functions
             if (luaL_dofile(context->L, "app.lua") != LUA_OK) {
-                SDL_Log("Error reloading app.lua: %s", lua_tostring(context->L, -1));
-                lua_pop(context->L, 1); // Pop error message
+                SDL_Log("Error reloading app.lua: %s",
+                  lua_tostring(context->L, -1));
+                lua_pop(context->L, 1);
             }
         }
     }
 
-    // Nothing else to do, so just continue on with the next frame
-    // or event.
+    // Update Clay layout dimensions on window resize.
+    if (event->type == SDL_EVENT_WINDOW_RESIZED) {
+        Clay_SetLayoutDimensions((Clay_Dimensions){
+            (float)event->window.data1,
+            (float)event->window.data2
+        });
+    }
+
     return SDL_APP_CONTINUE;
 }
 
@@ -210,12 +259,12 @@ void SDL_AppQuit(void* appState, SDL_AppResult result)
     AppContext* context = (AppContext*)appState;
 
     if (context != NULL) {
-
-        // Close Lua state
+        // Close Lua state.
         if (context->L) {
             lua_close(context->L);
         }
 
+        // Release and clean up GPU resources.
         if (context->device != NULL) {
             if (context->window != NULL) {
                 SDL_ReleaseWindowFromGPUDevice(context->device,
