@@ -11,7 +11,7 @@ Cumulus is a work-in-progress experimental project created to explore and learn 
 ## Tech Stack
 
 - **SDL3 & SDL_GPU** – Cross-platform window management and GPU-accelerated rendering
-- **Nuklear** – Immediate-mode GUI library for building user interfaces
+- **Clay** – High performance 2D UI layout library
 - **Lua** – Embedded scripting language via C integration
 - **cgltf** - glTF loader and writer
 
