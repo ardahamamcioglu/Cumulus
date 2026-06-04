@@ -11,7 +11,6 @@
 typedef struct AppContext {
     SDL_Window* window;
     SDL_GPUDevice* device;
-    struct nk_context* ctx;
     lua_State *L;
 } AppContext;
 
@@ -23,7 +22,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "Couldn't initialize SDL: %s", SDL_GetError());
+            "Could not initialize SDL: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -36,7 +35,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
 
     if (window == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "Couldn't create window: %s", SDL_GetError());
+            "Could not create window: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -49,7 +48,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
       false, NULL);
     if (device == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "Couldn't not create GPU device: %s", SDL_GetError());
+            "Could not create GPU device: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
