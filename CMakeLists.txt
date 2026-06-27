@@ -3,13 +3,15 @@ project(Cumulus C)
 
 include(FetchContent)
 
-set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 #Fetch SDL
 FetchContent_Declare(
         sdl
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG release-3.2.28
+        GIT_TAG main
+        GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(sdl)
 
@@ -32,6 +34,7 @@ FetchContent_Declare(
         cgltf
         GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
         GIT_TAG v1.14
+        GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(cgltf)
 
