@@ -16,13 +16,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(sdl)
 
 FetchContent_Declare(
-    clay
-    GIT_REPOSITORY https://github.com/nicbarker/clay.git
-    GIT_TAG v0.14
-    GIT_PROGRESS TRUE
+        nuklear
+        GIT_REPOSITORY https://github.com/Immediate-Mode-UI/Nuklear.git
+        GIT_TAG 4.12.8
 )
-set(CLAY_INCLUDE_ALL_EXAMPLES OFF)
-FetchContent_MakeAvailable(clay)
+FetchContent_MakeAvailable(nuklear)
 
 FetchContent_Declare(
         lua
@@ -45,8 +43,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 #set(CUMULUS_DIR "${CMAKE_SOURCE_DIR}/..")
 
-add_library(Clay INTERFACE)
-target_include_directories(Clay INTERFACE ${clay_SOURCE_DIR})
+add_library(Nuklear INTERFACE)
+target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
 
 add_library(cgltf INTERFACE)
 target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
@@ -76,4 +74,4 @@ if(UNIX AND NOT APPLE)
     install(FILES "${CMAKE_SOURCE_DIR}/icon.png" DESTINATION share/icons/hicolor/256x256/apps RENAME cumulus.png OPTIONAL)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Clay lua cgltf)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua cgltf)
