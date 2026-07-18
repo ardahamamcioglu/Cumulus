@@ -15,6 +15,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sdl)
 
+#Fetch SDL Shadercross
+FetchContent_Declare(
+					shadercross
+					GIT_REPOSITORY https://github.com/libsdl-org/SDL_shadercross.git
+        GIT_TAG main
+        GIT_PROGRESS TRUE
+)
+set(SDLSHADERCROSS_VENDORED ON)
+set(SDLSHADERCROSS_DXC OFF CACHE BOOL "")
+set(SDLSHADERCROSS_CLI OFF CACHE BOOL "")
+set(SDLSHADERCROSS_INSTALL OFF CACHE BOOL "")
+set(SDLSHADERCROSS_TESTS OFF CACHE BOOL "")
+set(SDLSHADERCROSS_SPIRVCROSS_SHARED OFF CACHE BOOL "")
+FetchContent_MakeAvailable(shadercross)
+
 FetchContent_Declare(
         nuklear
         GIT_REPOSITORY https://github.com/Immediate-Mode-UI/Nuklear.git
@@ -74,4 +89,4 @@ if(UNIX AND NOT APPLE)
     install(FILES "${CMAKE_SOURCE_DIR}/icon.png" DESTINATION share/icons/hicolor/256x256/apps RENAME cumulus.png OPTIONAL)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 Nuklear lua cgltf)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 SDL3_shadercross::SDL3_shadercross Nuklear lua cgltf)

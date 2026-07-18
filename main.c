@@ -40,7 +40,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     }
 
     SDL_WindowFlags windowFlags =
-      //SDL_WINDOW_HIGH_PIXEL_DENSITY | 
+      //SDL_WINDOW_HIGH_PIXEL_DENSITY |
 		SDL_WINDOW_RESIZABLE;
 
     SDL_Window* window = SDL_CreateWindow(
@@ -79,7 +79,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     // Initialize Nuklear
     struct nk_context* ctx = nk_sdl3_gpu_init(device, window, SDL_GetGPUSwapchainTextureFormat(device, window));
     nk_input_begin(ctx);
-    
+
     struct nk_font_atlas *atlas;
     nk_sdl3_gpu_font_stash_begin(&atlas);
     // Add fonts here if needed
@@ -90,7 +90,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
     context->device = device;
     context->ctx = ctx;
     context->L = luaL_newstate();
-    
+
     // 1. Open standard libraries (print, math, string, etc.)
     luaL_openlibs(context->L);
 
@@ -101,7 +101,7 @@ SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[]) {
         SDL_Log("Error loading %s: %s", scriptPath, errorMessage);
         lua_pop(context->L, 1); // Pop error message from stack
     }
-	 
+
     *appState = context;
 
     return SDL_APP_CONTINUE;
@@ -134,7 +134,7 @@ SDL_AppResult SDL_AppIterate(void* appState)
         nk_layout_row_static(ctx, 30, 80, 1);
         if (nk_button_label(ctx, "button"))
         SDL_Log("Button pressed!");
-        
+
         nk_layout_row_dynamic(ctx, 30, 2);
         if (nk_option_label(ctx, "easy", 1)) {}
         if (nk_option_label(ctx, "hard", 0)) {}
@@ -199,10 +199,10 @@ SDL_AppResult SDL_AppIterate(void* appState)
     SDL_GPURenderPass* renderPass;
     renderPass = SDL_BeginGPURenderPass(cmdBuf, &targetInfo,
         1, NULL);
-        
+
     /* Draw UI */
     nk_sdl3_gpu_render_draw(cmdBuf, renderPass);
-    
+
     SDL_EndGPURenderPass(renderPass);
   }
 
@@ -235,12 +235,12 @@ SDL_AppResult SDL_AppEvent(void* appState, SDL_Event* event)
         if (event->key.key == SDLK_ESCAPE) {
             return SDL_APP_SUCCESS;
         }
-        
+
         // Press R to reload Lua
         if (event->key.key == SDLK_R) {
             AppContext* context = (AppContext*)appState;
             SDL_Log("Reloading Lua script...");
-            
+
             // Re-run the file to update functions
             if (luaL_dofile(context->L, "app.lua") != LUA_OK) {
                 SDL_Log("Error reloading app.lua: %s", lua_tostring(context->L, -1));
@@ -259,7 +259,7 @@ void SDL_AppQuit(void* appState, SDL_AppResult result)
     AppContext* context = (AppContext*)appState;
 
     nk_sdl3_gpu_shutdown();
-	
+
     if (context != NULL) {
 
         // Close Lua state
