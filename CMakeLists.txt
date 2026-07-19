@@ -31,11 +31,11 @@ set(SDLSHADERCROSS_SPIRVCROSS_SHARED OFF CACHE BOOL "")
 FetchContent_MakeAvailable(shadercross)
 
 FetchContent_Declare(
-        nuklear
-        GIT_REPOSITORY https://github.com/Immediate-Mode-UI/Nuklear.git
-        GIT_TAG 4.12.8
+        microui
+        GIT_REPOSITORY https://github.com/rxi/microui.git
+        GIT_TAG master
 )
-FetchContent_MakeAvailable(nuklear)
+FetchContent_MakeAvailable(microui)
 
 FetchContent_Declare(
         lua
@@ -58,8 +58,11 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 #set(CUMULUS_DIR "${CMAKE_SOURCE_DIR}/..")
 
-add_library(Nuklear INTERFACE)
-target_include_directories(Nuklear INTERFACE ${nuklear_SOURCE_DIR})
+add_library(microui STATIC
+    ${microui_SOURCE_DIR}/src/microui.c
+)
+target_include_directories(microui PUBLIC ${microui_SOURCE_DIR}/src)
+set_property(TARGET microui PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_library(cgltf INTERFACE)
 target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
@@ -71,16 +74,16 @@ if(APPLE)
         set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
         set(PLATFORM_RESOURCES ${APP_ICON_MACOS})
     endif()
-    add_executable(Cumulus MACOSX_BUNDLE main.c ${PLATFORM_RESOURCES})
+    add_executable(Cumulus MACOSX_BUNDLE main.c app.c lua_script.c model_import.c ${PLATFORM_RESOURCES})
 elseif(WIN32)
     set(APP_ICON_WINDOWS "${CMAKE_SOURCE_DIR}/resources.rc")
     if(EXISTS ${APP_ICON_WINDOWS})
         set(PLATFORM_RESOURCES ${APP_ICON_WINDOWS})
     endif()
-    add_executable(Cumulus WIN32 main.c ${PLATFORM_RESOURCES})
+    add_executable(Cumulus WIN32 main.c app.c lua_script.c model_import.c ${PLATFORM_RESOURCES})
 else()
     # Linux - no embedded icon, uses .desktop file
-    add_executable(Cumulus main.c)
+    add_executable(Cumulus main.c app.c lua_script.c model_import.c)
 endif()
 
 if(UNIX AND NOT APPLE)
@@ -89,4 +92,4 @@ if(UNIX AND NOT APPLE)
     install(FILES "${CMAKE_SOURCE_DIR}/icon.png" DESTINATION share/icons/hicolor/256x256/apps RENAME cumulus.png OPTIONAL)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 SDL3_shadercross::SDL3_shadercross Nuklear lua cgltf)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 SDL3_shadercross::SDL3_shadercross microui lua cgltf)
