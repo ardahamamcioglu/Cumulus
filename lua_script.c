@@ -36,7 +36,7 @@ void lua_script_reload(lua_State *L)
 
 void lua_script_update(lua_State *L)
 {
-    lua_getglobal(L, "update");
+    lua_getglobal(L, "Update");
     if (lua_isfunction(L, -1)) {
         if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
             SDL_Log("Lua Runtime Error: %s", lua_tostring(L, -1));

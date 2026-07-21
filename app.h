@@ -1,19 +1,24 @@
 #ifndef CUMULUS_APP_H
 #define CUMULUS_APP_H
 
+#include "microui.h"
 #include <SDL3/SDL.h>
 #include <lua.h>
-#include "microui.h"
 
-typedef struct AppContext {
-    SDL_Window* window;
-    SDL_GPUDevice* device;
+/* Opaque cgltf model handle */
+struct cgltf_data;
+
+typedef struct AppContext
+{
+    SDL_Window *window;
+    SDL_GPUDevice *device;
     lua_State *L;
     mu_Context mu_ctx;
+    struct cgltf_data *model; /* loaded glTF model, NULL if none */
 } AppContext;
 
 /* Init SDL, window, GPU device, microui, Lua. Returns NULL on failure. */
-AppContext* app_init(void);
+AppContext *app_init(void);
 
 /* Per-frame: Lua update, UI, render */
 SDL_AppResult app_iterate(AppContext *ctx);

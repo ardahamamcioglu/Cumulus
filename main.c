@@ -8,7 +8,8 @@
 SDL_AppResult SDL_AppInit(void **appState, int argc, char *argv[])
 {
     AppContext *ctx = app_init();
-    if (!ctx) {
+    if (!ctx)
+    {
         return SDL_APP_FAILURE;
     }
     *appState = ctx;

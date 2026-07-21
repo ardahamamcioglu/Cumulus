@@ -1,4 +1,8 @@
 #!/bin/bash
 set -e
 
-open ./build/Cumulus.app
+if [ "$1" == "-v" ]; then
+	./build/Cumulus.app/Contents/MacOS/Cumulus
+else
+	open ./build/Cumulus.app
+fi
