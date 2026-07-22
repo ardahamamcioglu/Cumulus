@@ -69,15 +69,19 @@ set_property(TARGET microui PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_library(cgltf INTERFACE)
 target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
 
-if(APPLE)
-	set(MACOSX_BUNDLE_ICON_FILE icon.icns)
-	set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/icon.icns")
-	if(EXISTS ${APP_ICON_MACOS})
-		set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
-		set(PLATFORM_RESOURCES ${APP_ICON_MACOS})
-	endif()
-	add_executable(Cumulus MACOSX_BUNDLE main.c app.c lua_script.c model_import.c ${PLATFORM_RESOURCES})
-	#add_executable(Cumulus MACOSX_BUNDLE testdialog.c ${PLATFORM_RESOURCES})
+	if(APPLE)
+		set(MACOSX_BUNDLE_ICON_FILE icon.icns)
+		set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/icon.icns")
+		if(EXISTS ${APP_ICON_MACOS})
+			set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+			set(PLATFORM_RESOURCES ${APP_ICON_MACOS})
+		endif()
+		add_executable(Cumulus MACOSX_BUNDLE main.c app.c lua_script.c model_import.c ${PLATFORM_RESOURCES})
+		set_target_properties(Cumulus PROPERTIES
+			MACOSX_BUNDLE_GUI_IDENTIFIER "com.arda.cumulus"
+			MACOSX_BUNDLE_BUNDLE_VERSION "0.0.1"
+			MACOSX_BUNDLE_SHORT_VERSION_STRING "0.0.1"
+		)
 elseif(WIN32)
 	set(APP_ICON_WINDOWS "${CMAKE_SOURCE_DIR}/resources.rc")
 	if(EXISTS ${APP_ICON_WINDOWS})

@@ -18,11 +18,9 @@
 static const float CLEAR_COLOR[4] = {0.16f, 0.47f, 0.34f, 1.0f};
 
 /* File dialog filters — must stay alive until callback fires (SDL is async) */
-static const SDL_DialogFileFilter FILE_FILTERS[] = {
-    {.name = "glTF Model", .pattern = "gltf"},
-    {.name = "glTF Binary", .pattern = "glb"},
-    {.name = "All files",    .pattern = "*"}
-};
+static const SDL_DialogFileFilter FILE_FILTERS[] = {{.name = "glTF Model", .pattern = "gltf"},
+                                                    {.name = "glTF Binary", .pattern = "glb"},
+                                                    {.name = "All files", .pattern = "*"}};
 
 /* Callback fired by SDL_ShowOpenFileDialog when user picks a file (or cancels)
  */
@@ -143,8 +141,7 @@ SDL_AppResult app_iterate(AppContext *ctx)
         if (mu_button(&ctx->mu_ctx, "Load Model..."))
         {
             SDL_Log("Opening file dialog...\n");
-            SDL_ShowOpenFileDialog(on_file_dialog_result, ctx, ctx->window, FILE_FILTERS, SDL_arraysize(FILE_FILTERS),
-                                   NULL, false);
+            SDL_ShowOpenFileDialog(on_file_dialog_result, ctx, ctx->window, FILE_FILTERS, SDL_arraysize(FILE_FILTERS),NULL, false);
             SDL_Log("File dialog dispatched.\n");
         }
 
@@ -188,7 +185,7 @@ SDL_AppResult app_event(AppContext *ctx, SDL_Event *event)
         if (event->key.key == SDLK_O)
         {
             SDL_Log("Opening file dialog from event handler...\n");
-            SDL_ShowOpenFileDialog(on_file_dialog_result, ctx, ctx->window, FILE_FILTERS, SDL_arraysize(FILE_FILTERS), NULL, false);
+            SDL_ShowOpenFileDialog(on_file_dialog_result, ctx, ctx->window, FILE_FILTERS, SDL_arraysize(FILE_FILTERS),NULL, false);
             SDL_Log("File dialog dispatched.\n");
         }
     }
