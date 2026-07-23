@@ -7,8 +7,11 @@ if [ "$1" == "clean" ] || [ "$1" == "-clean" ]; then
     rm -rf .cache
 fi
 
-# Configure the project
+# Detect CPU core count for parallel builds
+NPROC=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+
+# Configure
 cmake -B build
 
-# Build the project
-cmake --build build
+# Build with all cores
+cmake --build build -j"$NPROC"
