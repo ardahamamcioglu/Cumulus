@@ -51,7 +51,7 @@ FetchContent_Declare(
     lua
     URL            https://www.lua.org/ftp/lua-5.5.0.tar.gz
     URL_HASH       SHA256=57ccc32bbbd005cab75bcc52444052535af691789dba2b9016d5c50640d68b3d
-    PATCH_COMMAND  "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_SOURCE_DIR}/lua_CMakeLists.txt" "CMakeLists.txt"
+    PATCH_COMMAND  "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_SOURCE_DIR}/cmake/lua_CMakeLists.txt" "CMakeLists.txt"
 )
 FetchContent_MakeAvailable(lua)
 
@@ -78,31 +78,55 @@ target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
 
 if(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE icon.icns)
-    set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/icon.icns")
+    set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/assets/icon.icns")
     if(EXISTS ${APP_ICON_MACOS})
         set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
         set(PLATFORM_RESOURCES ${APP_ICON_MACOS})
     endif()
-    add_executable(Cumulus MACOSX_BUNDLE main.c app.c lua_script.c model_import.c ${PLATFORM_RESOURCES})
+
+    # Bundle Lua scripts inside the .app bundle (for release distribution)
+    set(APP_LUA "${CMAKE_SOURCE_DIR}/scripts/app.lua")
+    if(EXISTS ${APP_LUA})
+        set_source_files_properties(${APP_LUA} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/scripts")
+        list(APPEND PLATFORM_RESOURCES ${APP_LUA})
+    endif()
+    add_executable(Cumulus MACOSX_BUNDLE src/main.c src/app.c src/lua_script.c src/model_import.c ${PLATFORM_RESOURCES})
+    target_include_directories(${PROJECT_NAME} PRIVATE src)
     set_target_properties(Cumulus PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.arda.cumulus"
         MACOSX_BUNDLE_BUNDLE_VERSION "0.0.1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.0.1"
     )
 elseif(WIN32)
-    set(APP_ICON_WINDOWS "${CMAKE_SOURCE_DIR}/resources.rc")
+    set(APP_ICON_WINDOWS "${CMAKE_SOURCE_DIR}/assets/resources.rc")
     if(EXISTS ${APP_ICON_WINDOWS})
         set(PLATFORM_RESOURCES ${APP_ICON_WINDOWS})
     endif()
-    add_executable(Cumulus WIN32 main.c app.c lua_script.c model_import.c ${PLATFORM_RESOURCES})
+    add_executable(Cumulus WIN32 src/main.c src/app.c src/lua_script.c src/model_import.c ${PLATFORM_RESOURCES})
+    target_include_directories(${PROJECT_NAME} PRIVATE src)
 else()
-    add_executable(Cumulus main.c app.c lua_script.c model_import.c)
+    add_executable(Cumulus src/main.c src/app.c src/lua_script.c src/model_import.c)
+    target_include_directories(${PROJECT_NAME} PRIVATE src)
 endif()
 
 if(UNIX AND NOT APPLE)
     install(TARGETS Cumulus DESTINATION bin)
     install(FILES "${CMAKE_SOURCE_DIR}/cumulus.desktop" DESTINATION share/applications OPTIONAL)
-    install(FILES "${CMAKE_SOURCE_DIR}/icon.png" DESTINATION share/icons/hicolor/256x256/apps RENAME cumulus.png OPTIONAL)
+    install(FILES "${CMAKE_SOURCE_DIR}/assets/icon.png" DESTINATION share/icons/hicolor/256x256/apps RENAME cumulus.png OPTIONAL)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 microui lua cgltf)
+
+# ------------------------------------------------------------------
+# Copy Lua scripts next to the binary so they're found at runtime.
+# The engine also searches the macOS bundle Resources (for release builds)
+# and a mods/ folder next to the binary (always).
+# ------------------------------------------------------------------
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/scripts"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/scripts/app.lua"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/scripts/app.lua"
+    COMMENT "Copying Lua scripts to build output"
+)
