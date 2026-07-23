@@ -2,16 +2,16 @@
 
 # Cumulus
 
-A personal learning project for building game engine-like applications.
+My personal learning project for building game engine-like applications.
 
 ## Overview
 
-Cumulus is a work-in-progress experimental project created to explore and learn the fundamentals of building game engines and interactive applications. The project integrates several powerful libraries to handle graphics, UI, and scripting.
+Cumulus is a work-in-progress project created to explore and learn the fundamentals of building game engines and interactive applications. The project integrates several libraries to handle graphics, UI, and scripting.
 
 ## Tech Stack
 
 - **SDL3 & SDL_GPU** – Cross-platform window management and GPU-accelerated rendering
-- **Nuklear** – Immediate-mode GUI library for building user interfaces
+- **MicroUI** – Immediate-mode GUI library for building user interfaces
 - **Lua** – Embedded scripting language via C integration
 - **cgltf** - glTF loader and writer
 
@@ -19,14 +19,6 @@ Cumulus is a work-in-progress experimental project created to explore and learn 
 
 ```bash
 ./build.sh
-```
-
-Or manually with CMake:
-
-```bash
-mkdir -p build && cd build
-cmake ..
-make
 ```
 
 ## Status
