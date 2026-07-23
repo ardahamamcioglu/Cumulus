@@ -19,8 +19,7 @@ static const float CLEAR_COLOR[4] = {0.16f, 0.47f, 0.34f, 1.0f};
 
 /* File dialog filters — must stay alive until callback fires (SDL is async) */
 static const SDL_DialogFileFilter FILE_FILTERS[] = {{.name = "glTF Model", .pattern = "gltf"},
-                                                    {.name = "glTF Binary", .pattern = "glb"},
-                                                    {.name = "All files", .pattern = "*"}};
+                                                    {.name = "glTF Binary", .pattern = "glb"}};
 
 /* Callback fired by SDL_ShowOpenFileDialog when user picks a file (or cancels)
  */
@@ -133,7 +132,7 @@ SDL_AppResult app_iterate(AppContext *ctx)
 
     /* Build microui UI */
     mu_begin(&ctx->mu_ctx);
-    if (mu_begin_window(&ctx->mu_ctx, "Cumulus", mu_rect(40, 40, 300, 400)))
+    if (mu_begin_window(&ctx->mu_ctx, "Cumulus", mu_rect(40, 40, 240, 140)))
     {
         mu_layout_row(&ctx->mu_ctx, 2, (int[]){80, -1}, 0);
 
@@ -181,12 +180,6 @@ SDL_AppResult app_event(AppContext *ctx, SDL_Event *event)
         if (event->key.key == SDLK_R)
         {
             lua_script_reload(ctx->L);
-        }
-        if (event->key.key == SDLK_O)
-        {
-            SDL_Log("Opening file dialog from event handler...\n");
-            SDL_ShowOpenFileDialog(on_file_dialog_result, ctx, ctx->window, FILE_FILTERS, SDL_arraysize(FILE_FILTERS),NULL, false);
-            SDL_Log("File dialog dispatched.\n");
         }
     }
 

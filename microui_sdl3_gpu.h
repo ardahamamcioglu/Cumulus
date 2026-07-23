@@ -267,6 +267,7 @@ typedef struct MuSDL3GPU_Device
     Uint32 index_buffer_capacity;
     Uint32 vertex_count;
     Uint32 index_count;
+    Uint32 rect_index_count;
 
     MuVertex *vertex_data;
     Uint16 *index_data;
@@ -764,7 +765,8 @@ void mu_sdl3_gpu_handle_event(SDL_Event *evt, mu_Context *ctx)
     }
 }
 
-/* Process mu commands and upload vertex data. Call BEFORE render pass. */
+/* Process mu commands and upload vertex data. Call BEFORE render pass.
+ * Two-pass approach: RECTs first (white texture), then TEXT+ICON (font texture). */
 void mu_sdl3_gpu_upload(SDL_GPUCommandBuffer *cmd_buf, mu_Context *ctx)
 {
     mu_Command *cmd = NULL;
@@ -772,18 +774,25 @@ void mu_sdl3_gpu_upload(SDL_GPUCommandBuffer *cmd_buf, mu_Context *ctx)
     mu_gpu.vertex_count = 0;
     mu_gpu.index_count = 0;
 
-    /* Iterate microui commands and build quads */
+    /* Pass 1: RECT commands — rendered with 1x1 white texture */
+    while (mu_next_command(ctx, &cmd))
+    {
+        if (cmd->type == MU_COMMAND_RECT)
+        {
+            mu_Rect r = cmd->rect.rect;
+            mu_Color c = cmd->rect.color;
+            mu_push_quad((float)r.x, (float)r.y, (float)(r.x + r.w), (float)(r.y + r.h),
+                         0, 0, 0, 0, c.r, c.g, c.b, c.a);
+        }
+    }
+    mu_gpu.rect_index_count = mu_gpu.index_count;
+
+    /* Pass 2: TEXT and ICON commands — rendered with font texture */
+    cmd = NULL;
     while (mu_next_command(ctx, &cmd))
     {
         switch (cmd->type)
         {
-        case MU_COMMAND_RECT: {
-            mu_Rect r = cmd->rect.rect;
-            mu_Color c = cmd->rect.color;
-            mu_push_quad((float)r.x, (float)r.y, (float)(r.x + r.w), (float)(r.y + r.h), 0, 0, 0, 0, c.r, c.g, c.b,
-                         c.a);
-            break;
-        }
         case MU_COMMAND_TEXT: {
             const char *str = cmd->text.str;
             int len = (int)strlen(str);
@@ -901,7 +910,8 @@ void mu_sdl3_gpu_upload(SDL_GPUCommandBuffer *cmd_buf, mu_Context *ctx)
     SDL_ReleaseGPUTransferBuffer(mu_gpu.device, tbuf);
 }
 
-/* Draw already-uploaded vertex data. Call INSIDE render pass. */
+/* Draw already-uploaded vertex data. Call INSIDE render pass.
+ * Two draw calls: RECTs with white texture, TEXT+ICON with font texture. */
 void mu_sdl3_gpu_render(SDL_GPUCommandBuffer *cmd_buf, SDL_GPURenderPass *render_pass)
 {
     if (!mu_gpu.pipeline || mu_gpu.vertex_count == 0)
@@ -931,11 +941,25 @@ void mu_sdl3_gpu_render(SDL_GPUCommandBuffer *cmd_buf, SDL_GPURenderPass *render
 
     SDL_GPUTextureSamplerBinding tex_binding;
     SDL_zero(tex_binding);
-    tex_binding.texture = mu_gpu.font_texture;
-    tex_binding.sampler = mu_gpu.sampler;
-    SDL_BindGPUFragmentSamplers(render_pass, 0, &tex_binding, 1);
 
-    SDL_DrawGPUIndexedPrimitives(render_pass, mu_gpu.index_count, 1, 0, 0, 0);
+    /* Draw 1: RECTs — solid color quads, sample from 1x1 white texture */
+    if (mu_gpu.rect_index_count > 0)
+    {
+        tex_binding.texture = mu_gpu.white_texture;
+        tex_binding.sampler = mu_gpu.sampler;
+        SDL_BindGPUFragmentSamplers(render_pass, 0, &tex_binding, 1);
+        SDL_DrawGPUIndexedPrimitives(render_pass, mu_gpu.rect_index_count, 1, 0, 0, 0);
+    }
+
+    /* Draw 2: TEXT + ICON — glyph-shaped quads, sample from font atlas texture */
+    Uint32 text_index_count = mu_gpu.index_count - mu_gpu.rect_index_count;
+    if (text_index_count > 0)
+    {
+        tex_binding.texture = mu_gpu.font_texture;
+        tex_binding.sampler = mu_gpu.sampler;
+        SDL_BindGPUFragmentSamplers(render_pass, 0, &tex_binding, 1);
+        SDL_DrawGPUIndexedPrimitives(render_pass, text_index_count, 1, mu_gpu.rect_index_count, 0, 0);
+    }
 }
 
 void mu_sdl3_gpu_shutdown(void)
