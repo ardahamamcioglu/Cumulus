@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "microui_sdl3_gpu.h"
+#include "microui_ext.h"
 #include <cgltf.h>
 
 #define WINDOW_TITLE "Cumulus"
@@ -16,6 +17,24 @@
 #define WINDOW_HEIGHT 600
 
 static const float CLEAR_COLOR[4] = {0.16f, 0.47f, 0.34f, 1.0f};
+
+/* --- Widget-demo state (persists across frames) --- */
+static struct
+{
+    int shape;        /* dropdown selection */
+    mu_Real progress; /* progress bar / slider */
+    int mode;         /* radio selection */
+    mu_Color color;   /* color picker */
+    int menu_open;    /* menu bar: open menu index, -1 = none */
+    int last_action;  /* last menu item action (for display) */
+} demo = {
+    .shape = 0,
+    .progress = 0.5f,
+    .mode = 1,
+    .color = {220, 120, 60, 255},
+    .menu_open = -1,
+    .last_action = -1,
+};
 
 /* File dialog filters — must stay alive until callback fires (SDL is async) */
 static const SDL_DialogFileFilter FILE_FILTERS[] = {{.name = "glTF Model", .pattern = "gltf"},
@@ -65,8 +84,11 @@ AppContext *app_init(void)
         return NULL;
     }
 
+    /* We ship MSL (Metal) and SPIR-V (Vulkan) shaders for now. DXIL/D3D12 is
+     * intentionally omitted so SDL picks Metal or Vulkan rather than selecting
+     * a D3D12 device whose shaders we can't provide yet. */
     SDL_GPUShaderFormat shaderFormats =
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
+        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL;
 
     SDL_GPUDevice *device = SDL_CreateGPUDevice(shaderFormats, false, NULL);
     if (!device)
@@ -150,6 +172,69 @@ SDL_AppResult app_iterate(AppContext *ctx)
         }
 
         mu_end_window(&ctx->mu_ctx);
+    }
+
+    /* Widget demo window */
+    {
+        static const char *shapes[] = {"Triangle", "Square", "Circle", "Pentagon"};
+
+        static const mu_ext_MenuItem file_items[] = {
+            {"New", 1}, {"Open...", 2}, {"Save", 3}, {"Quit", 4},
+        };
+        static const mu_ext_MenuItem edit_items[] = {
+            {"Undo", 5}, {"Redo", 6},
+        };
+        static const mu_ext_Menu menus[] = {
+            {"File", file_items, SDL_arraysize(file_items)},
+            {"Edit", edit_items, SDL_arraysize(edit_items)},
+        };
+
+        if (mu_begin_window(&ctx->mu_ctx, "Widget Demo", mu_rect(320, 40, 300, 400)))
+        {
+            /* menu bar */
+            int action = mu_ext_menu_bar(&ctx->mu_ctx, menus, SDL_arraysize(menus), &demo.menu_open);
+            if (action >= 0)
+            {
+                demo.last_action = action;
+            }
+
+            /* dropdown */
+            mu_layout_row(&ctx->mu_ctx, 2, (int[]){60, -1}, 0);
+            mu_label(&ctx->mu_ctx, "Shape:");
+            mu_ext_dropdown(&ctx->mu_ctx, "##shape", &demo.shape, shapes, SDL_arraysize(shapes));
+
+            /* progress bar + tooltip */
+            mu_layout_row(&ctx->mu_ctx, 2, (int[]){60, -1}, 0);
+            mu_label(&ctx->mu_ctx, "Progress:");
+            mu_ext_progress(&ctx->mu_ctx, demo.progress);
+            mu_ext_tooltip(&ctx->mu_ctx, "Drag the slider below to change this");
+            mu_layout_row(&ctx->mu_ctx, 2, (int[]){60, -1}, 0);
+            mu_label(&ctx->mu_ctx, "Set:");
+            mu_slider(&ctx->mu_ctx, &demo.progress, 0, 1);
+
+            /* radio buttons */
+            mu_layout_row(&ctx->mu_ctx, 1, (int[]){-1}, 0);
+            mu_label(&ctx->mu_ctx, "Render mode:");
+            mu_ext_radio(&ctx->mu_ctx, "Wireframe", &demo.mode, 0);
+            mu_ext_radio(&ctx->mu_ctx, "Solid", &demo.mode, 1);
+            mu_ext_radio(&ctx->mu_ctx, "Shaded", &demo.mode, 2);
+
+            /* color picker */
+            mu_layout_row(&ctx->mu_ctx, 2, (int[]){60, 40}, 20);
+            mu_label(&ctx->mu_ctx, "Color:");
+            mu_ext_color_picker(&ctx->mu_ctx, "##color", &demo.color);
+
+            /* last menu action */
+            if (demo.last_action >= 0)
+            {
+                char buf[64];
+                SDL_snprintf(buf, sizeof(buf), "Last menu action: %d", demo.last_action);
+                mu_layout_row(&ctx->mu_ctx, 1, (int[]){-1}, 0);
+                mu_label(&ctx->mu_ctx, buf);
+            }
+
+            mu_end_window(&ctx->mu_ctx);
+        }
     }
     mu_end(&ctx->mu_ctx);
 

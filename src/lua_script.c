@@ -16,6 +16,9 @@
 static const char *find_script(const char *filename)
 {
     static char resolved[1024];
+
+    /* NOTE: SDL_GetBasePath() returns a cached string owned by SDL — do NOT
+     * free it. */
     const char *base = SDL_GetBasePath();
     if (!base) {
         return filename;  /* can't resolve, try cwd-relative */
@@ -31,13 +34,11 @@ static const char *find_script(const char *filename)
         SDL_snprintf(resolved, sizeof(resolved), "%s%s/%s",
                      base, search_dirs[i], filename);
         if (SDL_GetPathInfo(resolved, NULL)) {
-            SDL_free((void *)base);
             return resolved;
         }
     }
 
     /* Not found in any known location */
-    SDL_free((void *)base);
     SDL_Log("Lua script not found alongside binary, trying cwd: %s", filename);
     return filename;
 }
@@ -53,12 +54,12 @@ static void load_file(lua_State *L, const char *path)
 /* Scan <basepath>/mods/ and load every .lua file found. */
 static void load_mods(lua_State *L)
 {
+    /* SDL_GetBasePath() returns a cached string owned by SDL — do NOT free it. */
     const char *base = SDL_GetBasePath();
     if (!base) return;
 
     char mods_dir[1024];
     SDL_snprintf(mods_dir, sizeof(mods_dir), "%smods", base);
-    SDL_free((void *)base);
 
     DIR *dir = opendir(mods_dir);
     if (!dir) return;  /* no mods folder — that's fine */

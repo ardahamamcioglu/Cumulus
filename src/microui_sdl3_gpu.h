@@ -18,6 +18,7 @@
 // #include <math.h>
 #include "microui.h"
 #include <SDL3/SDL.h>
+#include "microui_spv.h" /* precompiled SPIR-V for the Vulkan backend */
 
 /*================================================================================
  * Embedded 8x13 bitmap font (ASCII 32-126)
@@ -550,12 +551,47 @@ static MuSDL3GPU_Device *mu_sdl3_gpu_device_create(void)
     SDL_GPUShaderCreateInfo shader_info;
     SDL_zero(shader_info);
 
+    /* Pick the shader source for whichever backend SDL chose. MSL for Metal,
+     * precompiled SPIR-V for Vulkan. (DXIL/D3D12 is intentionally left out;
+     * the device is created with only SPIR-V | MSL — see app.c.) */
+    SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(mu_gpu.device);
+    SDL_GPUShaderFormat fmt;
+    const Uint8 *vert_code;
+    const Uint8 *frag_code;
+    size_t vert_size;
+    size_t frag_size;
+    const char *entrypoint;
+
+    if (formats & SDL_GPU_SHADERFORMAT_MSL)
+    {
+        fmt = SDL_GPU_SHADERFORMAT_MSL;
+        vert_code = (const Uint8 *)mu_msl_vert;
+        vert_size = SDL_strlen(mu_msl_vert);
+        frag_code = (const Uint8 *)mu_msl_frag;
+        frag_size = SDL_strlen(mu_msl_frag);
+        entrypoint = "main0";
+    }
+    else if (formats & SDL_GPU_SHADERFORMAT_SPIRV)
+    {
+        fmt = SDL_GPU_SHADERFORMAT_SPIRV;
+        vert_code = mu_spv_vert;
+        vert_size = mu_spv_vert_len;
+        frag_code = mu_spv_frag;
+        frag_size = mu_spv_frag_len;
+        entrypoint = "main";
+    }
+    else
+    {
+        SDL_Log("microui backend: device supports no usable shader format (need MSL or SPIR-V)");
+        return NULL;
+    }
+
     /* Vertex shader */
     shader_info.stage = SDL_GPU_SHADERSTAGE_VERTEX;
-    shader_info.format = SDL_GPU_SHADERFORMAT_MSL;
-    shader_info.code = (const Uint8 *)mu_msl_vert;
-    shader_info.code_size = SDL_strlen(mu_msl_vert);
-    shader_info.entrypoint = "main0";
+    shader_info.format = fmt;
+    shader_info.code = vert_code;
+    shader_info.code_size = vert_size;
+    shader_info.entrypoint = entrypoint;
     shader_info.num_uniform_buffers = 1;
 
     mu_gpu.vertex_shader = SDL_CreateGPUShader(mu_gpu.device, &shader_info);
@@ -567,10 +603,10 @@ static MuSDL3GPU_Device *mu_sdl3_gpu_device_create(void)
 
     /* Fragment shader */
     shader_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    shader_info.format = SDL_GPU_SHADERFORMAT_MSL;
-    shader_info.code = (const Uint8 *)mu_msl_frag;
-    shader_info.code_size = SDL_strlen(mu_msl_frag);
-    shader_info.entrypoint = "main0";
+    shader_info.format = fmt;
+    shader_info.code = frag_code;
+    shader_info.code_size = frag_size;
+    shader_info.entrypoint = entrypoint;
     shader_info.num_samplers = 1;
     shader_info.num_uniform_buffers = 0;
 
@@ -616,7 +652,9 @@ static MuSDL3GPU_Device *mu_sdl3_gpu_device_create(void)
 
     SDL_GPUColorTargetDescription target_desc;
     SDL_zero(target_desc);
-    target_desc.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+    /* Match the swapchain format (BGRA on Metal, often RGBA on Vulkan) so the
+     * pipeline is valid across backends. */
+    target_desc.format = SDL_GetGPUSwapchainTextureFormat(mu_gpu.device, mu_gpu.window);
     target_desc.blend_state.enable_blend = true;
     target_desc.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
     target_desc.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
