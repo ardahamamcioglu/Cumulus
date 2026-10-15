@@ -25,12 +25,6 @@ from the active SDL_GPU backend:
 - **Metal** — MSL shaders (embedded source)
 - **Vulkan** — SPIR-V shaders (precompiled, `src/microui_spv.h`)
 
-D3D12 (DXIL) is intentionally not yet enabled, since producing DXIL requires
-Microsoft's DXC; the GPU device is created with only `SPIRV | MSL` so SDL picks
-Metal or Vulkan. To add D3D12 later, wire up DXIL shaders (e.g. via
-SDL_shadercross) and re-add `SDL_GPU_SHADERFORMAT_DXIL` to the device format
-flags in `src/app.c`.
-
 The SPIR-V blob is generated from the editable GLSL sources in
 [`shaders/`](shaders/) — regenerate it with:
 
